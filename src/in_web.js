@@ -569,9 +569,9 @@ export function IN_Move( cmd ) {
 
 			}
 
-			cl.viewangles[ YAW ] -= m_yaw.value * touchLook.x * sensitivity.value;
+			cl.viewangles[ YAW ] -= m_yaw.value * touchLook.x * sensitivity.value * 2;
 
-			cl.viewangles[ PITCH ] += m_pitch.value * touchLook.y * sensitivity.value;
+			cl.viewangles[ PITCH ] += m_pitch.value * touchLook.y * sensitivity.value * 2;
 			if ( cl.viewangles[ PITCH ] > 80 )
 				cl.viewangles[ PITCH ] = 80;
 			if ( cl.viewangles[ PITCH ] < - 70 )
