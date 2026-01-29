@@ -146,7 +146,7 @@ Draws one solid graphics character
 function M_DrawCharacter( cx, line, num ) {
 
 	if ( _Draw_Character )
-		_Draw_Character( cx + ( ( _vid.width - 320 ) >> 1 ), line, num );
+		_Draw_Character( cx + ( ( _vid.width - 320 ) >> 1 ), line + ( ( _vid.height - 200 ) >> 1 ), num );
 
 }
 
@@ -175,14 +175,14 @@ function M_PrintWhite( cx, cy, str ) {
 function M_DrawTransPic( x, y, pic ) {
 
 	if ( _Draw_TransPic && pic )
-		_Draw_TransPic( x + ( ( _vid.width - 320 ) >> 1 ), y, pic );
+		_Draw_TransPic( x + ( ( _vid.width - 320 ) >> 1 ), y + ( ( _vid.height - 200 ) >> 1 ), pic );
 
 }
 
 function M_DrawPic( x, y, pic ) {
 
 	if ( _Draw_Pic && pic )
-		_Draw_Pic( x + ( ( _vid.width - 320 ) >> 1 ), y, pic );
+		_Draw_Pic( x + ( ( _vid.width - 320 ) >> 1 ), y + ( ( _vid.height - 200 ) >> 1 ), pic );
 
 }
 
@@ -1491,11 +1491,13 @@ export function M_TouchInput( touchX, touchY, screenWidth, screenHeight ) {
 	const vidX = ( touchX / screenWidth ) * _vid.width;
 	const vidY = ( touchY / screenHeight ) * _vid.height;
 
-	// Menu is drawn centered horizontally: drawing X = menuX + (_vid.width - 320) / 2
-	// So to convert click to menu space: menuX = vidX - (_vid.width - 320) / 2
+	// Menu is drawn centered: drawing X = menuX + (_vid.width - 320) / 2
+	//                         drawing Y = menuY + (_vid.height - 200) / 2
+	// So to convert click to menu space: menuX = vidX - offsetX, menuY = vidY - offsetY
 	const offsetX = ( _vid.width - 320 ) / 2;
+	const offsetY = ( _vid.height - 200 ) / 2;
 	const vx = vidX - offsetX;
-	const vy = vidY;
+	const vy = vidY - offsetY;
 
 
 	// Handle based on current menu state
