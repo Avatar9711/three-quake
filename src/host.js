@@ -320,6 +320,7 @@ export async function Host_Init( parms ) {
 		Draw_Character: Draw_Character,
 		Draw_Fill: Draw_Fill,
 		Draw_FadeScreen: Draw_FadeScreen,
+		Draw_ConsoleBackground: Draw_ConsoleBackground,
 		Draw_String: Draw_String,
 		S_LocalSound: S_LocalSound,
 		SCR_BeginLoadingPlaque: SCR_BeginLoadingPlaque,

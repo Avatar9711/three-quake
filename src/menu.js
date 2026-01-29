@@ -12,7 +12,7 @@ import { cl_forwardspeed, cl_backspeed } from './cl_input.js';
 import { sensitivity, m_pitch, lookspring, lookstrafe } from './cl_main.js';
 import { bgmvolume, volume } from './sound.js';
 import { Cvar_SetValue } from './cvar.js';
-import { scr_viewsize } from './gl_screen.js';
+import { scr_viewsize, scr_con_current } from './gl_screen.js';
 import { v_gamma } from './view.js';
 
 /*
@@ -81,6 +81,7 @@ let _Draw_Pic = null;
 let _Draw_Character = null;
 let _Draw_Fill = null;
 let _Draw_FadeScreen = null;
+let _Draw_ConsoleBackground = null;
 let _Draw_String = null;
 let _Draw_TransPicTranslate = null;
 let _S_LocalSound = null;
@@ -104,12 +105,14 @@ export function M_SetExternals( externals ) {
 	if ( externals.Draw_Character ) _Draw_Character = externals.Draw_Character;
 	if ( externals.Draw_Fill ) _Draw_Fill = externals.Draw_Fill;
 	if ( externals.Draw_FadeScreen ) _Draw_FadeScreen = externals.Draw_FadeScreen;
+	if ( externals.Draw_ConsoleBackground ) _Draw_ConsoleBackground = externals.Draw_ConsoleBackground;
 	if ( externals.Draw_String ) _Draw_String = externals.Draw_String;
 	if ( externals.S_LocalSound ) _S_LocalSound = externals.S_LocalSound;
 	if ( externals.SCR_BeginLoadingPlaque ) _SCR_BeginLoadingPlaque = externals.SCR_BeginLoadingPlaque;
 	if ( externals.IN_RequestPointerLock ) _IN_RequestPointerLock = externals.IN_RequestPointerLock;
 	if ( externals.host_time_get ) _host_time_get = externals.host_time_get;
 	if ( externals.realtime_get ) _realtime_get = externals.realtime_get;
+	if ( externals.CL_NextDemo ) _CL_NextDemo = externals.CL_NextDemo;
 
 }
 
@@ -1419,10 +1422,20 @@ export function M_Draw() {
 	if ( m_state === m_none || getKeyDest() !== key_menu )
 		return;
 
-	if ( m_recursiveDraw ) {
+	if ( ! m_recursiveDraw ) {
 
-		// draw previous menu as background if overlapping
-		if ( _Draw_FadeScreen ) _Draw_FadeScreen();
+		if ( scr_con_current ) {
+
+			if ( _Draw_ConsoleBackground ) _Draw_ConsoleBackground( _vid.height );
+
+		} else {
+
+			if ( _Draw_FadeScreen ) _Draw_FadeScreen();
+
+		}
+
+	} else {
+
 		m_recursiveDraw = false;
 
 	}
