@@ -921,7 +921,7 @@ function M_Options_Draw() {
 	M_Print( 16, 40, '         Go to console' );
 	M_Print( 16, 48, '     Reset to defaults' );
 
-	M_Print( 16, 56, '    Texture Filtering' );
+	M_Print( 16, 56, '     Texture Filtering' );
 	M_DrawCheckbox( 220, 56, gl_texturemode.value );
 
 	M_Print( 16, 64, '           Screen size' );
