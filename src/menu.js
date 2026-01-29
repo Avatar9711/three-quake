@@ -1499,6 +1499,13 @@ export function M_TouchInput( touchX, touchY, screenWidth, screenHeight ) {
 	const vx = vidX - offsetX;
 	const vy = vidY - offsetY;
 
+	// Click outside menu area acts like pressing escape (go back)
+	if ( vx < 0 || vx > 320 || vy < 0 || vy > 200 ) {
+
+		M_Keydown( K_ESCAPE );
+		return;
+
+	}
 
 	// Handle based on current menu state
 	switch ( m_state ) {
