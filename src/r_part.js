@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { VectorCopy, VectorSubtract, VectorNormalize, VectorAdd, vec3_origin } from './mathlib.js';
 import { d_8to24table } from './vid.js';
 import { cl as client_cl } from './client.js';
+import { gl_texturemode, GL_RegisterTexture } from './glquake.js';
 
 const MAX_PARTICLES = 2048;
 
@@ -94,10 +95,15 @@ function R_InitParticleTexture() {
 	}
 
 	particleTexture = new THREE.DataTexture( data, 8, 8, THREE.RGBAFormat );
-	particleTexture.magFilter = THREE.NearestFilter;
-	particleTexture.minFilter = THREE.NearestFilter;
+	// Use cvar to determine filter mode: 0 = nearest (pixelated), 1 = linear (smooth)
+	const filter = gl_texturemode.value ? THREE.LinearFilter : THREE.NearestFilter;
+	particleTexture.magFilter = filter;
+	particleTexture.minFilter = filter;
 	particleTexture.colorSpace = THREE.SRGBColorSpace;
 	particleTexture.needsUpdate = true;
+
+	// Register for filter updates when setting changes
+	GL_RegisterTexture( particleTexture );
 
 }
 
