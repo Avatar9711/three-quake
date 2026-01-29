@@ -534,39 +534,8 @@ export function R_DrawViewModel() {
 	if ( ! currententity || ! currententity.model )
 		return;
 
-	// hack the depth range to prevent view model from poking into walls
-	// In Three.js, this is handled via renderOrder and depthTest
+	// Draw the viewmodel
 	R_DrawAliasModel( currententity );
-
-	// Set the weapon mesh to render on top of everything
-	const weaponMesh = currententity._aliasMesh;
-	if ( weaponMesh ) {
-
-		weaponMesh.renderOrder = 999;
-		// Use a separate material for the weapon so depthTest=false
-		// doesn't pollute the shared material cache.
-		// Check if the model changed since last frame by comparing texture UUIDs.
-		const currentTexture = weaponMesh.material?.map;
-		const cachedTexture = currententity._weaponMaterial?.map;
-		const textureChanged = currentTexture?.uuid !== cachedTexture?.uuid;
-
-		if ( ! currententity._weaponMaterial || textureChanged ) {
-
-			// Dispose old material if it exists
-			if ( currententity._weaponMaterial ) {
-
-				currententity._weaponMaterial.dispose();
-
-			}
-
-			currententity._weaponMaterial = weaponMesh.material.clone();
-			currententity._weaponMaterial.depthTest = false;
-
-		}
-
-		weaponMesh.material = currententity._weaponMaterial;
-
-	}
 
 }
 

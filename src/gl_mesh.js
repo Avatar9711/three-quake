@@ -751,7 +751,13 @@ function R_GetAliasMaterial( paliashdr, entity, hasLighting ) {
 	if ( ! paliashdr._materialCache ) paliashdr._materialCache = new Map();
 
 	const skinnum = entity && entity.skinnum ? entity.skinnum : 0;
-	const cacheKey = skinnum * 2 + ( hasLighting ? 1 : 0 );
+
+	// Animated skins cycle through frames 0-3 every 0.1 seconds
+	// Original: anim = (int)(cl.time*10) & 3
+	const anim = cl && cl.time ? ( Math.floor( cl.time * 10 ) & 3 ) : 0;
+
+	// Cache key includes animation frame for animated skins
+	const cacheKey = skinnum * 8 + anim * 2 + ( hasLighting ? 1 : 0 );
 
 	let material = paliashdr._materialCache.get( cacheKey );
 	if ( material ) return material;
@@ -762,7 +768,8 @@ function R_GetAliasMaterial( paliashdr, entity, hasLighting ) {
 		const skinGroup = paliashdr.gl_texturenum[ skinnum ] || paliashdr.gl_texturenum[ 0 ];
 		if ( skinGroup ) {
 
-			texture = Array.isArray( skinGroup ) ? skinGroup[ 0 ] : skinGroup;
+			// Select animated frame if skin group is an array
+			texture = Array.isArray( skinGroup ) ? ( skinGroup[ anim ] || skinGroup[ 0 ] ) : skinGroup;
 
 		}
 
