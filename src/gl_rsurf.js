@@ -9,6 +9,8 @@ function createQuakeLightmapMaterial( diffuseMap, lightmapTex ) {
 
 	lightmapTex.channel = 1; // Use uv1 for lightmap coordinates
 
+	// Use MeshLambertMaterial so surfaces respond to Three.js PointLights
+	// for dynamic lighting effects (explosions, muzzle flashes, etc.)
 	return new THREE.MeshLambertMaterial( {
 		map: diffuseMap,
 		lightMap: lightmapTex,
@@ -165,6 +167,14 @@ let nColinElim = 0;
 // Three.js geometry cache for BSP surfaces
 let worldGroup = null; // THREE.Group for world BSP
 let worldMeshesBuilt = false; // true after R_BuildWorldMeshes has run
+
+// PVS visibility using BatchedMesh for efficient rendering
+// instanceVisInfo: Array<{batch: BatchedMesh, instanceId: number, leaves: leaf[]}>
+// Each instance tracks all leaves that contain its surface - visible if ANY leaf is visible
+const instanceVisInfo = [];
+
+// All BatchedMesh objects for the world (one per texture/lightmap combo)
+const worldBatchedMeshes = [];
 
 // Water/sky mesh tracking: Set-based approach to add/remove from scene
 // without creating/disposing meshes every frame
@@ -1235,7 +1245,23 @@ export function R_DrawBrushModel( e ) {
 			if ( psurf.flags & ( SURF_DRAWSKY | SURF_DRAWTURB ) ) continue;
 			if ( ! psurf.polys ) continue;
 
-			const planeNormal = psurf.plane ? psurf.plane.normal : null;
+			// Get plane normal, flip if SURF_PLANEBACK
+			let planeNormal = null;
+			if ( psurf.plane ) {
+
+				const pn = psurf.plane.normal;
+				if ( psurf.flags & SURF_PLANEBACK ) {
+
+					planeNormal = new Float32Array( [ - pn[ 0 ], - pn[ 1 ], - pn[ 2 ] ] );
+
+				} else {
+
+					planeNormal = pn;
+
+				}
+
+			}
+
 			const geom = DrawGLPoly( psurf.polys, planeNormal );
 			if ( ! geom ) continue;
 
@@ -1448,6 +1474,9 @@ export function R_DrawWorld() {
 	currentRenderGroup = worldGroup;
 
 	R_RecursiveWorldNode( cl_ref.worldmodel.nodes[ 0 ] );
+
+	// Update mesh visibility based on PVS (leaf visframe set by R_MarkLeaves)
+	R_UpdateWorldVisibility();
 
 	DrawTextureChains();
 
@@ -1691,9 +1720,9 @@ export function R_MarkLeaves() {
 	set_r_oldviewleaf( r_viewleaf );
 
 	let vis;
-	if ( r_novis.value ) {
+	if ( r_novis.value || r_viewleaf == null ) {
 
-		// mark everything visible
+		// mark everything visible (also when r_viewleaf is null - player outside map)
 		const numBytes = ( cl_ref.worldmodel.numleafs + 7 ) >> 3;
 		vis = new Uint8Array( numBytes );
 		vis.fill( 0xff );
@@ -2100,10 +2129,9 @@ function concatFloat32Arrays( arrays ) {
 //============================================================================
 // R_BuildWorldMeshes
 //
-// Iterates textures like DrawTextureChains, sub-groups surfaces by
-// lightmap atlas, and merges all surface geometries in each sub-group
-// into one THREE.BufferGeometry with one shared material.
-// This reduces draw calls from ~2600 to ~200-500.
+// Builds world geometry using BatchedMesh for efficient PVS culling.
+// One BatchedMesh per (texture, lightmap) combo, with each leaf's geometry
+// added as a separate instance. Visibility is toggled via setVisibleAt().
 //============================================================================
 
 function R_BuildWorldMeshes() {
@@ -2121,84 +2149,195 @@ function R_BuildWorldMeshes() {
 
 	const worldmodel = cl_ref.worldmodel;
 
-	// Iterate textures like DrawTextureChains
-	for ( let i = 0; i < worldmodel.numtextures; i ++ ) {
+	// Clear previous batch data
+	instanceVisInfo.length = 0;
+	worldBatchedMeshes.length = 0;
 
-		const t = worldmodel.textures[ i ];
-		if ( ! t ) continue;
-		if ( ! t.gl_texture ) continue;
+	// Build a mapping from surface to ALL leaves that contain it.
+	// A surface is visible if ANY of its containing leaves is visible (PVS).
+	const surfaceToLeaves = new Map();
 
-		// Collect all surfaces using this texture
-		// Sub-group by lightmap atlas number
-		const lmGroups = new Map(); // lightmapNum → { posArrays, uvArrays, lmUvArrays }
+	for ( let leafIdx = 1; leafIdx <= worldmodel.numleafs; leafIdx ++ ) {
 
-		for ( let j = 1; j < 256; j ++ ) {
+		const leaf = worldmodel.leafs[ leafIdx ];
+		if ( ! leaf ) continue;
+		if ( leaf.contents === - 2 ) continue; // CONTENTS_SOLID
 
-			const m = cl_ref.model_precache ? cl_ref.model_precache[ j ] : null;
-			if ( ! m ) break;
-			if ( m.name && m.name.charAt( 0 ) === '*' ) continue;
-			if ( ! m.surfaces ) continue;
+		if ( leaf.firstmarksurface && leaf.nummarksurfaces > 0 ) {
 
-			// Only iterate this model's own surface range, not submodel surfaces
-			const surfStart = m.firstmodelsurface || 0;
-			const surfEnd = surfStart + ( m.nummodelsurfaces || m.numsurfaces );
+			for ( let j = 0; j < leaf.nummarksurfaces; j ++ ) {
 
-			for ( let k = surfStart; k < surfEnd; k ++ ) {
+				const surf = leaf.firstmarksurface[ j ];
+				if ( ! surf ) continue;
 
-				const surf = m.surfaces[ k ];
-				if ( surf.flags & ( SURF_DRAWSKY | SURF_DRAWTURB ) ) continue;
-				if ( surf.texinfo.texture !== t ) continue;
-				if ( ! surf.polys ) continue;
+				if ( ! surfaceToLeaves.has( surf ) ) {
 
-				const planeNormal = surf.plane ? surf.plane.normal : null;
-				const geom = DrawGLPoly( surf.polys, planeNormal );
-				if ( ! geom ) continue;
-
-				const lmNum = surf.lightmaptexturenum;
-				if ( ! lmGroups.has( lmNum ) ) {
-
-					lmGroups.set( lmNum, { posArrays: [], uvArrays: [], lmUvArrays: [] } );
+					surfaceToLeaves.set( surf, [] );
 
 				}
 
-				const group = lmGroups.get( lmNum );
-				group.posArrays.push( geom.getAttribute( 'position' ).array );
-				group.uvArrays.push( geom.getAttribute( 'uv' ).array );
-				group.lmUvArrays.push( geom.getAttribute( 'uv1' ).array );
-				geom.dispose();
+				surfaceToLeaves.get( surf ).push( leaf );
 
 			}
 
 		}
 
-		// Create one mesh per (texture, lightmap) sub-group
-		for ( const [ lmNum, group ] of lmGroups ) {
+	}
 
-			const positions = concatFloat32Arrays( group.posArrays );
-			const uvs = concatFloat32Arrays( group.uvArrays );
-			const lmUvs = concatFloat32Arrays( group.lmUvArrays );
+	// First pass: collect geometry data per (texture, lightmap)
+	// Each surface stores its geometry and ALL leaves that contain it
+	// Structure: batchGroups: Map<texKey, { texture, lmNum, totalVerts, totalGeoms, surfaceData: Array<{geom, leaves}> }>
+	const batchGroups = new Map();
 
-			const geometry = new THREE.BufferGeometry();
-			geometry.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
-			geometry.setAttribute( 'uv', new THREE.BufferAttribute( uvs, 2 ) );
-			geometry.setAttribute( 'uv1', new THREE.BufferAttribute( lmUvs, 2 ) );
-			geometry.computeVertexNormals();
+	const surfStart = worldmodel.firstmodelsurface || 0;
+	const surfEnd = surfStart + ( worldmodel.nummodelsurfaces || worldmodel.numsurfaces );
 
-			const animTex = R_TextureAnimation( t );
-			const diffuse = ( animTex && animTex.gl_texture ) ? animTex.gl_texture : t.gl_texture;
-			const lmTex = lightmapTextures[ lmNum ];
-			const material = lmTex
-				? createQuakeLightmapMaterial( diffuse, lmTex )
-				: new THREE.MeshBasicMaterial( { map: diffuse } );
+	for ( let k = surfStart; k < surfEnd; k ++ ) {
 
-			const mesh = new THREE.Mesh( geometry, material );
-			worldGroup.add( mesh );
+		const surf = worldmodel.surfaces[ k ];
+		if ( ! surf ) continue;
+		if ( surf.flags & ( SURF_DRAWSKY | SURF_DRAWTURB ) ) continue;
+		if ( ! surf.polys ) continue;
+		if ( ! surf.texinfo || ! surf.texinfo.texture ) continue;
+
+		const t = surf.texinfo.texture;
+		if ( ! t.gl_texture ) continue;
+
+		// Get all leaves that contain this surface
+		const leaves = surfaceToLeaves.get( surf );
+		if ( ! leaves || leaves.length === 0 ) continue;
+
+		// Get plane normal, flip if SURF_PLANEBACK (surface faces opposite of plane)
+		let planeNormal = null;
+		if ( surf.plane ) {
+
+			const pn = surf.plane.normal;
+			if ( surf.flags & SURF_PLANEBACK ) {
+
+				planeNormal = new Float32Array( [ - pn[ 0 ], - pn[ 1 ], - pn[ 2 ] ] );
+
+			} else {
+
+				planeNormal = pn;
+
+			}
 
 		}
+
+		const geom = DrawGLPoly( surf.polys, planeNormal );
+		if ( ! geom ) continue;
+
+		const lmNum = surf.lightmaptexturenum;
+		const texKey = ( t._buildId || ( t._buildId = Math.random() ) ) + '_' + lmNum;
+
+		if ( ! batchGroups.has( texKey ) ) {
+
+			batchGroups.set( texKey, {
+				texture: t,
+				lmNum: lmNum,
+				totalVerts: 0,
+				totalGeoms: 0,
+				surfaceData: []
+			} );
+
+		}
+
+		const group = batchGroups.get( texKey );
+		const vertCount = geom.getAttribute( 'position' ).count;
+
+		group.totalVerts += vertCount;
+		group.totalGeoms ++;
+		group.surfaceData.push( { geom: geom, leaves: leaves } );
+
+	}
+
+	// Identity matrix for all geometries (already in world space)
+	const identityMatrix = new THREE.Matrix4();
+
+	// Second pass: create BatchedMesh for each (texture, lightmap) group
+	for ( const [ texKey, group ] of batchGroups ) {
+
+		const t = group.texture;
+		const animTex = R_TextureAnimation( t );
+		const diffuse = ( animTex && animTex.gl_texture ) ? animTex.gl_texture : t.gl_texture;
+		const lmTex = lightmapTextures[ group.lmNum ];
+		const material = lmTex
+			? createQuakeLightmapMaterial( diffuse, lmTex )
+			: new THREE.MeshBasicMaterial( { map: diffuse } );
+
+		// Create BatchedMesh with capacity for all geometries in this group
+		const batchedMesh = new THREE.BatchedMesh(
+			group.totalGeoms,
+			group.totalVerts,
+			0, // no indices (non-indexed geometry)
+			material
+		);
+
+		// Name for debugging (texture name + lightmap number)
+		const texName = t.name || '';
+		batchedMesh.name = `world_${texName}_lm${group.lmNum}`;
+
+		// Add each surface's geometry to the batch
+		for ( const surfData of group.surfaceData ) {
+
+			// Add geometry, then create an instance of it
+			const geoId = batchedMesh.addGeometry( surfData.geom );
+			const instanceId = batchedMesh.addInstance( geoId );
+			batchedMesh.setMatrixAt( instanceId, identityMatrix );
+
+			// Store instance with ALL its leaves for visibility updates
+			// Surface is visible if ANY of its leaves is visible
+			instanceVisInfo.push( {
+				batch: batchedMesh,
+				instanceId: instanceId,
+				leaves: surfData.leaves
+			} );
+
+			// Dispose the temporary geometry (data copied to batch)
+			surfData.geom.dispose();
+
+		}
+
+		worldGroup.add( batchedMesh );
+		worldBatchedMeshes.push( batchedMesh );
 
 	}
 
 	worldMeshesBuilt = true;
+
+}
+
+//============================================================================
+// R_UpdateWorldVisibility
+//
+// Called each frame after R_MarkLeaves. Uses BatchedMesh.setVisibleAt() to
+// toggle visibility. A surface is visible if ANY of its containing leaves
+// is in the PVS (has visframe === r_visframecount).
+//============================================================================
+
+function R_UpdateWorldVisibility() {
+
+	for ( let i = 0; i < instanceVisInfo.length; i ++ ) {
+
+		const info = instanceVisInfo[ i ];
+		const leaves = info.leaves;
+
+		// Surface is visible if ANY of its leaves is visible
+		let visible = false;
+		for ( let j = 0; j < leaves.length; j ++ ) {
+
+			if ( leaves[ j ].visframe === r_visframecount ) {
+
+				visible = true;
+				break;
+
+			}
+
+		}
+
+		info.batch.setVisibleAt( info.instanceId, visible );
+
+	}
 
 }
 
@@ -2207,7 +2346,18 @@ export function GL_BuildLightmaps() {
 	const cl_ref = cl;
 	if ( ! cl_ref ) return;
 
-	// Dispose old cached world meshes
+	// Dispose old BatchedMesh objects
+	for ( const batchedMesh of worldBatchedMeshes ) {
+
+		if ( batchedMesh.parent ) batchedMesh.parent.remove( batchedMesh );
+		batchedMesh.dispose();
+		if ( batchedMesh.material ) batchedMesh.material.dispose();
+
+	}
+
+	worldBatchedMeshes.length = 0;
+
+	// Dispose any other children in worldGroup (water/sky meshes added dynamically)
 	if ( worldGroup ) {
 
 		while ( worldGroup.children.length > 0 ) {
@@ -2222,6 +2372,9 @@ export function GL_BuildLightmaps() {
 	}
 
 	worldMeshesBuilt = false;
+
+	// Clear PVS instance visibility info
+	instanceVisInfo.length = 0;
 
 	// Clear water/sky mesh caches
 	for ( const mesh of _waterMeshesInScene ) {
