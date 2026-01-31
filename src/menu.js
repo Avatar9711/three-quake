@@ -1844,6 +1844,10 @@ function M_Menu_Setup_f() {
 	m_state = m_setup;
 	m_entersound = true;
 
+	// Initialize from current values
+	setup_myname = _cl_name ? _cl_name.string : 'player';
+	// setup_hostname would come from hostname cvar if we had it
+
 }
 
 function M_Setup_Draw() {
@@ -1870,6 +1874,13 @@ function M_Setup_Draw() {
 
 	M_DrawCharacter( 56, setup_cursor_table[ setup_cursor ], 12 + ( ( Math.floor( _realtime_get() * 4 ) ) & 1 ) );
 
+	// Draw blinking cursor on text fields
+	if ( setup_cursor === 0 )
+		M_DrawCharacter( 168 + 8 * setup_hostname.length, setup_cursor_table[ setup_cursor ], 10 + ( ( Math.floor( _realtime_get() * 4 ) ) & 1 ) );
+
+	if ( setup_cursor === 1 )
+		M_DrawCharacter( 168 + 8 * setup_myname.length, setup_cursor_table[ setup_cursor ], 10 + ( ( Math.floor( _realtime_get() * 4 ) ) & 1 ) );
+
 }
 
 function M_Setup_Key( key ) {
@@ -1892,11 +1903,53 @@ function M_Setup_Key( key ) {
 				setup_cursor = 0;
 			break;
 		case K_ENTER:
+			if ( setup_cursor === 0 || setup_cursor === 1 )
+				return;
+
 			if ( setup_cursor === 4 ) {
 
 				Cbuf_AddText( 'name "' + setup_myname + '"\n' );
 				Cbuf_AddText( 'hostname "' + setup_hostname + '"\n' );
+				m_entersound = true;
 				M_Menu_MultiPlayer_f();
+
+			}
+
+			break;
+
+		case K_BACKSPACE:
+			if ( setup_cursor === 0 ) {
+
+				if ( setup_hostname.length > 0 )
+					setup_hostname = setup_hostname.substring( 0, setup_hostname.length - 1 );
+
+			}
+
+			if ( setup_cursor === 1 ) {
+
+				if ( setup_myname.length > 0 )
+					setup_myname = setup_myname.substring( 0, setup_myname.length - 1 );
+
+			}
+
+			break;
+
+		default:
+			// Character input for text fields
+			if ( key < 32 || key > 127 )
+				break;
+
+			if ( setup_cursor === 0 ) {
+
+				if ( setup_hostname.length < 15 )
+					setup_hostname = setup_hostname + String.fromCharCode( key );
+
+			}
+
+			if ( setup_cursor === 1 ) {
+
+				if ( setup_myname.length < 15 )
+					setup_myname = setup_myname + String.fromCharCode( key );
 
 			}
 
