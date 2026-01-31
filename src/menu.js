@@ -254,6 +254,7 @@ let _Draw_String = null;
 let _Draw_TransPicTranslate = null;
 let _S_LocalSound = null;
 let _SCR_BeginLoadingPlaque = null;
+let _SCR_EndLoadingPlaque = null;
 let _SCR_ModalMessage = null;
 let _IN_RequestPointerLock = null;
 let _CL_NextDemo = null;
@@ -277,6 +278,7 @@ export function M_SetExternals( externals ) {
 	if ( externals.Draw_String ) _Draw_String = externals.Draw_String;
 	if ( externals.S_LocalSound ) _S_LocalSound = externals.S_LocalSound;
 	if ( externals.SCR_BeginLoadingPlaque ) _SCR_BeginLoadingPlaque = externals.SCR_BeginLoadingPlaque;
+	if ( externals.SCR_EndLoadingPlaque ) _SCR_EndLoadingPlaque = externals.SCR_EndLoadingPlaque;
 	if ( externals.IN_RequestPointerLock ) _IN_RequestPointerLock = externals.IN_RequestPointerLock;
 	if ( externals.host_time_get ) _host_time_get = externals.host_time_get;
 	if ( externals.realtime_get ) _realtime_get = externals.realtime_get;
