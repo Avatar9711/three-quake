@@ -516,10 +516,12 @@ async function _handleLobbyProtocol(
 				let room = getRoom(roomId);
 
 				// Auto-create room for specific shared link (3LUVYX)
+				// Use current map to avoid triggering a map change that would disconnect existing players
 				if (!room && roomId === '3LUVYX') {
 					Sys_Printf('Auto-creating shared room: ' + roomId + '\n');
+					const currentMap = _getCurrentMap ? _getCurrentMap() : 'start';
 					room = createRoomWithId(roomId, {
-						map: 'start',
+						map: currentMap,
 						maxPlayers: 16,
 						hostName: 'Shared'
 					});
@@ -546,14 +548,9 @@ async function _handleLobbyProtocol(
 				conn.roomId = room.id;
 				updateRoomPlayerCount(room.id, room.playerCount + 1);
 
-				// Check if we need to change map for this room
-				if (_mapChangeCallback != null && _getCurrentMap != null) {
-					const currentMap = _getCurrentMap();
-					if (room.map !== currentMap) {
-						Sys_Printf('Changing map from %s to %s for room %s\n', currentMap, room.map, roomId);
-						await _mapChangeCallback(room.map);
-					}
-				}
+				// NOTE: We intentionally do NOT change the map when joining an existing room.
+				// The server runs a single game instance, and changing the map would disconnect
+				// all existing players. Joining players just play on whatever map is currently active.
 
 				// Continue to game connection
 				return true;
