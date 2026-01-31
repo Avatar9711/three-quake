@@ -37,6 +37,7 @@ import {
 	WT_SearchForHosts,
 	WT_SetDriverLevel,
 	WT_SetSocketAllocator,
+	WT_SetMapCallbacks,
 } from './net_webtransport_server.ts';
 import { NET_NewQSocket } from '../src/net_main.js';
 
@@ -177,6 +178,15 @@ async function Host_Init_Server() {
 
 	// Start listening for connections
 	await net_drivers[1].Listen(true);
+
+	// Set up map change callbacks so rooms can trigger level changes
+	WT_SetMapCallbacks(
+		async (mapName) => {
+			Sys_Printf('Changing map to: ' + mapName + '\n');
+			await SV_SpawnServer(mapName);
+		},
+		() => sv.name || ''
+	);
 
 	// Spawn the default map
 	Sys_Printf('Spawning server for map: ' + CONFIG.defaultMap + '\n');

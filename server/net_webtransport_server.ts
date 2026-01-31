@@ -10,6 +10,21 @@ let serverPort = 4433;
 let certFile = 'cert.pem';
 let keyFile = 'key.pem';
 
+// Callback for map changes when joining rooms
+let _mapChangeCallback: ((mapName: string) => Promise<void>) | null = null;
+let _getCurrentMap: (() => string) | null = null;
+
+/**
+ * Set callbacks for map management
+ */
+export function WT_SetMapCallbacks(
+	changeMap: (mapName: string) => Promise<void>,
+	getCurrentMap: () => string
+): void {
+	_mapChangeCallback = changeMap;
+	_getCurrentMap = getCurrentMap;
+}
+
 // Connection tracking
 interface ClientConnection {
 	id: number;
@@ -498,6 +513,16 @@ async function _handleLobbyProtocol(
 					return false;
 				}
 				Sys_Printf('Client joining room: ' + roomId + '\n');
+
+				// Check if we need to change map for this room
+				if (_mapChangeCallback != null && _getCurrentMap != null) {
+					const currentMap = _getCurrentMap();
+					if (room.map !== currentMap) {
+						Sys_Printf('Changing map from %s to %s for room %s\n', currentMap, room.map, roomId);
+						await _mapChangeCallback(room.map);
+					}
+				}
+
 				// Continue to game connection
 				return true;
 			}
@@ -531,6 +556,15 @@ async function _handleLobbyProtocol(
 					}
 
 					Sys_Printf('Client created room: ' + room.id + '\n');
+
+					// Load the map for this room (like original Quake's "map" command)
+					if (_mapChangeCallback != null && _getCurrentMap != null) {
+						const currentMap = _getCurrentMap();
+						if (room.map !== currentMap) {
+							Sys_Printf('Loading map %s for new room %s\n', room.map, room.id);
+							await _mapChangeCallback(room.map);
+						}
+					}
 
 					// Send the room info back to the client
 					const roomJson = JSON.stringify(room);
