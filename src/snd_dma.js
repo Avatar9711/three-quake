@@ -868,6 +868,13 @@ export function S_StaticSound( sfx, origin, fvol, attenuation ) {
 	if ( ! sc )
 		return;
 
+	if ( sc.loopstart < 0 ) {
+
+		Con_Printf( 'Sound %s not looped\n', sfx.name );
+		return;
+
+	}
+
 	ss.sfx = sfx;
 	ss.origin[ 0 ] = origin[ 0 ];
 	ss.origin[ 1 ] = origin[ 1 ];
@@ -881,10 +888,8 @@ export function S_StaticSound( sfx, origin, fvol, attenuation ) {
 
 	SND_Spatialize( ss );
 
-	// NOTE: Static/ambient sounds need continuous spatial updates every frame.
-	// For now, we don't play them immediately - they require proper management
-	// in S_Update to start/stop based on player distance.
-	// TODO: Implement proper static sound spatialization in S_Update
+	// Static sounds are not played immediately here. S_Update() manages them
+	// each frame, starting/stopping playback based on player distance.
 
 }
 
