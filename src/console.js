@@ -352,14 +352,19 @@ export function Con_Print( txt ) {
 			if ( con_current >= 0 ) {
 				const rt = _getRealtime();
 				con_times[ con_current % NUM_CON_TIMES ] = rt;
-				// DEBUG: Log when timestamps are set
-				if ( rt > 1 ) console.log( '[ConTime] line', con_current, 'time', rt.toFixed(2) );
 			}
 
 		}
 
 		if ( c === 10 ) { // '\n'
 
+			// Also set timestamp when newline is processed (ensures notify works even with unusual message flow)
+			if ( con_current >= 0 ) {
+				const rt = _getRealtime();
+				if ( rt > 0 ) {
+					con_times[ con_current % NUM_CON_TIMES ] = rt;
+				}
+			}
 			con_x = 0;
 
 		} else if ( c === 13 ) { // '\r'
@@ -521,12 +526,6 @@ export function Con_DrawNotify() {
 
 	let v = 0;
 	const realtime = _getRealtime();
-
-	// DEBUG: Log once per second
-	if ( Math.floor( realtime ) !== Math.floor( realtime - 0.02 ) && realtime > 5 ) {
-		console.log( '[Notify] realtime', realtime.toFixed(2), 'con_current', con_current,
-			'times', Array.from( con_times ).map( t => t.toFixed( 1 ) ).join( ',' ) );
-	}
 
 	for ( let i = con_current - NUM_CON_TIMES + 1; i <= con_current; i ++ ) {
 
