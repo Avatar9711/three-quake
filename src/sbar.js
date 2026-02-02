@@ -3,6 +3,7 @@
 import { Cmd_AddCommand } from './cmd.js';
 import { realtime } from './host.js';
 import { Con_Printf } from './console.js';
+import { Draw_GetUIScale } from './gl_draw.js';
 import {
 	IT_SHOTGUN, IT_SUPER_SHOTGUN, IT_NAILGUN, IT_SUPER_NAILGUN,
 	IT_GRENADE_LAUNCHER, IT_ROCKET_LAUNCHER, IT_LIGHTNING, IT_SUPER_LIGHTNING,
@@ -109,8 +110,20 @@ let scoreboardlines = 0;
 let _cl = { stats: new Int32Array( 32 ), items: 0, gametype: 0, scores: [], time: 0, faceanimtime: 0, maxclients: 16, levelname: '' };
 let _realVid = { width: 640, height: 480, numpages: 1 };
 const _vid = {
-	get width() { return Math.floor( _realVid.width / ( window.devicePixelRatio || 1 ) ); },
-	get height() { return Math.floor( _realVid.height / ( window.devicePixelRatio || 1 ) ); },
+	get width() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.width / ( dpr * uiScale ) );
+
+	},
+	get height() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.height / ( dpr * uiScale ) );
+
+	},
 	get numpages() { return _realVid.numpages; }
 };
 let _Draw_Pic = null;

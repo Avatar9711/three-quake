@@ -6,6 +6,7 @@ import { Sbar_Changed } from './sbar.js';
 import { W_GetLumpName } from './wad.js';
 import { d_8to24table as vid_d_8to24table } from './vid.js';
 import { COM_FindFile } from './pak.js';
+import { Cmd_AddCommand, Cmd_Argc, Cmd_Argv } from './cmd.js';
 
 /*
 ==============================================================================
@@ -60,6 +61,186 @@ let d_8to24table = null;
 /*
 ==============================================================================
 
+			UI SCALING
+
+GLQuake used vid.conwidth/conheight to define a virtual resolution for 2D
+content. We implement this via canvas transforms - all 2D drawing happens
+in a virtual coordinate space that scales to fill the actual screen.
+
+Default virtual height is 240 pixels (close to Quake's original 200).
+This gives menus/HUD a classic look while scaling to any screen size.
+
+==============================================================================
+*/
+
+// Target virtual height for 2D content (adjustable)
+// 240 gives a classic Quake feel, 480 gives smaller/more modern UI
+let scr_conheight = 240;
+
+// Calculated scale factor (CSS pixels per virtual pixel)
+let _uiScale = 1;
+
+/*
+================
+_calculateUIScale
+
+Calculate the UI scale factor based on screen size and target virtual height.
+Updates _uiScale and returns the virtual dimensions.
+================
+*/
+function _calculateUIScale() {
+
+	const dpr = window.devicePixelRatio || 1;
+	const cssWidth = Math.floor( _realVid.width / dpr );
+	const cssHeight = Math.floor( _realVid.height / dpr );
+
+	// Calculate scale to achieve target virtual height
+	// Use floor to avoid fractional scaling (sharper pixels)
+	_uiScale = Math.max( 1, Math.floor( cssHeight / scr_conheight ) );
+
+	// Return virtual dimensions
+	return {
+		width: Math.floor( cssWidth / _uiScale ),
+		height: Math.floor( cssHeight / _uiScale )
+	};
+
+}
+
+/*
+================
+SCR_SetConHeight
+
+Set the target virtual height for UI scaling.
+Lower values = larger UI, higher values = smaller UI.
+Minimum: 200, Maximum: screen height in CSS pixels.
+================
+*/
+export function SCR_SetConHeight( height ) {
+
+	const dpr = window.devicePixelRatio || 1;
+	const cssHeight = Math.floor( _realVid.height / dpr );
+
+	// Clamp to reasonable range
+	scr_conheight = Math.max( 200, Math.min( height, cssHeight ) );
+	_calculateUIScale();
+
+}
+
+/*
+================
+SCR_GetConHeight
+
+Get the current target virtual height.
+================
+*/
+export function SCR_GetConHeight() {
+
+	return scr_conheight;
+
+}
+
+/*
+================
+Draw_GetUIScale
+
+Get the current UI scale factor.
+Used by other modules to calculate virtual dimensions.
+================
+*/
+export function Draw_GetUIScale() {
+
+	_calculateUIScale();
+	return _uiScale;
+
+}
+
+/*
+================
+SCR_ConHeight_f
+
+Console command to set the virtual UI height.
+Usage: scr_conheight [height]
+Lower values = larger UI (240 = classic Quake size)
+Higher values = smaller UI (480 = modern size)
+================
+*/
+function SCR_ConHeight_f() {
+
+	if ( Cmd_Argc() === 1 ) {
+
+		// No argument - print current value
+		const dims = _calculateUIScale();
+		Con_Printf( 'scr_conheight is %d (virtual: %dx%d, scale: %dx)\n',
+			scr_conheight, dims.width, dims.height, _uiScale );
+		return;
+
+	}
+
+	const val = parseInt( Cmd_Argv( 1 ), 10 );
+	if ( isNaN( val ) || val < 200 ) {
+
+		Con_Printf( 'scr_conheight must be at least 200\n' );
+		return;
+
+	}
+
+	SCR_SetConHeight( val );
+	const dims = _calculateUIScale();
+	Con_Printf( 'UI scale: %dx (virtual: %dx%d)\n', _uiScale, dims.width, dims.height );
+
+}
+
+/*
+================
+SCR_UIScaleUp_f
+
+Increase UI size (decrease scr_conheight).
+================
+*/
+function SCR_UIScaleUp_f() {
+
+	// Decrease conheight by ~40 (makes UI bigger)
+	SCR_SetConHeight( scr_conheight - 40 );
+	const dims = _calculateUIScale();
+	Con_Printf( 'UI scale: %dx (virtual: %dx%d)\n', _uiScale, dims.width, dims.height );
+
+}
+
+/*
+================
+SCR_UIScaleDown_f
+
+Decrease UI size (increase scr_conheight).
+================
+*/
+function SCR_UIScaleDown_f() {
+
+	// Increase conheight by ~40 (makes UI smaller)
+	SCR_SetConHeight( scr_conheight + 40 );
+	const dims = _calculateUIScale();
+	Con_Printf( 'UI scale: %dx (virtual: %dx%d)\n', _uiScale, dims.width, dims.height );
+
+}
+
+/*
+================
+Draw_InitCommands
+
+Register UI scale console commands.
+Called from Draw_Init.
+================
+*/
+function Draw_InitCommands() {
+
+	Cmd_AddCommand( 'scr_conheight', SCR_ConHeight_f );
+	Cmd_AddCommand( 'uiscale+', SCR_UIScaleUp_f );
+	Cmd_AddCommand( 'uiscale-', SCR_UIScaleDown_f );
+
+}
+
+/*
+==============================================================================
+
 			EXTERNAL REFERENCES
 
 ==============================================================================
@@ -67,8 +248,18 @@ let d_8to24table = null;
 
 let _realVid = { width: 640, height: 480 };
 const _vid = {
-	get width() { return Math.floor( _realVid.width / ( window.devicePixelRatio || 1 ) ); },
-	get height() { return Math.floor( _realVid.height / ( window.devicePixelRatio || 1 ) ); },
+	get width() {
+
+		const dims = _calculateUIScale();
+		return dims.width;
+
+	},
+	get height() {
+
+		const dims = _calculateUIScale();
+		return dims.height;
+
+	},
 	get numpages() { return _realVid.numpages; }
 };
 
@@ -209,25 +400,17 @@ export function Draw_Init( canvas ) {
 
 			overlayCanvas.width = _realVid.width;
 			overlayCanvas.height = _realVid.height;
-			if ( overlayCtx ) {
-
-				overlayCtx.imageSmoothingEnabled = false;
-				const dpr = window.devicePixelRatio || 1;
-				overlayCtx.scale( dpr, dpr );
-
-			}
+			// Scale is applied per-frame in Draw_BeginFrame
 
 		} );
 
 	}
 
-	if ( overlayCtx ) {
+	// Initial scale calculation
+	_calculateUIScale();
 
-		overlayCtx.imageSmoothingEnabled = false;
-		const dpr = window.devicePixelRatio || 1;
-		overlayCtx.scale( dpr, dpr );
-
-	}
+	// Register console commands
+	Draw_InitCommands();
 
 	// Load charset from WAD for character drawing
 	_loadCharset();
@@ -239,7 +422,7 @@ export function Draw_Init( canvas ) {
 	draw_disc = Draw_PicFromWad( 'disc' );
 	draw_backtile = Draw_PicFromWad( 'backtile' );
 
-	Con_Printf( 'GL_Draw initialized (canvas 2D overlay)\n' );
+	Con_Printf( 'GL_Draw initialized (canvas 2D overlay, scale=' + _uiScale + 'x)\n' );
 
 }
 
@@ -260,17 +443,27 @@ export function Draw_GetOverlayCanvas() {
 ===============
 Draw_BeginFrame
 
-Clear the overlay for a new frame of 2D drawing
+Clear the overlay for a new frame of 2D drawing.
+Applies UI scaling transform so all drawing happens in virtual coordinates.
 ===============
 */
 export function Draw_BeginFrame() {
 
 	if ( overlayCtx ) {
 
-		overlayCtx.save();
+		// Reset transform and clear
 		overlayCtx.setTransform( 1, 0, 0, 1, 0, 0 );
 		overlayCtx.clearRect( 0, 0, overlayCanvas.width, overlayCanvas.height );
-		overlayCtx.restore();
+
+		// Apply combined DPR + UI scale transform
+		// This maps virtual coordinates to physical canvas pixels
+		const dpr = window.devicePixelRatio || 1;
+		_calculateUIScale();
+		const totalScale = dpr * _uiScale;
+		overlayCtx.setTransform( totalScale, 0, 0, totalScale, 0, 0 );
+
+		// Disable image smoothing for crisp pixels
+		overlayCtx.imageSmoothingEnabled = false;
 
 	}
 

@@ -4,6 +4,7 @@
 import { Cvar_RegisterVariable } from './cvar.js';
 import { Cmd_AddCommand } from './cmd.js';
 import { Con_Printf } from './console.js';
+import { Draw_GetUIScale } from './gl_draw.js';
 
 /*
 ==============================================================================
@@ -62,7 +63,23 @@ let fpscount = 0;
 export let scr_fps = 0;
 
 // External references
-let _vid = { width: 640, height: 480 };
+let _realVid = { width: 640, height: 480 };
+const _vid = {
+	get width() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.width / ( dpr * uiScale ) );
+
+	},
+	get height() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.height / ( dpr * uiScale ) );
+
+	}
+};
 let _cls = { state: 0, signon: 0 };
 let _cl = { paused: false, time: 0, intermission: 0 };
 let _realtime = 0;
@@ -75,7 +92,7 @@ let _Draw_ConsoleBackground = null;
 
 export function SCR_SetExternals( externals ) {
 
-	if ( externals.vid ) _vid = externals.vid;
+	if ( externals.vid ) _realVid = externals.vid;
 	if ( externals.cls ) _cls = externals.cls;
 	if ( externals.cl ) _cl = externals.cl;
 	if ( externals.Draw_Pic ) _Draw_Pic = externals.Draw_Pic;

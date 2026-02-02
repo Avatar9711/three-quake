@@ -7,6 +7,7 @@ import { Con_Printf, con_forcedup, con_backscroll, Con_SetBackscroll, con_totall
 import { M_Keydown, M_ToggleMenu_f } from './menu.js';
 import { SCR_UpdateScreen, SCR_EndLoadingPlaque } from './gl_screen.js';
 import { Sys_Error } from './sys.js';
+import { Draw_GetUIScale } from './gl_draw.js';
 
 /*
 ==============================================================================
@@ -257,12 +258,28 @@ const keynames = [
 // External references we need
 // These are set by other modules to avoid circular imports
 let _cls = { state: 0, demoplayback: false, signon: 0 };
-let _vid = { height: 480, width: 640 };
+let _realVid = { height: 480, width: 640 };
+const _vid = {
+	get width() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.width / ( dpr * uiScale ) );
+
+	},
+	get height() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.height / ( dpr * uiScale ) );
+
+	}
+};
 
 export function Key_SetExternals( externals ) {
 
 	if ( externals.cls ) _cls = externals.cls;
-	if ( externals.vid ) _vid = externals.vid;
+	if ( externals.vid ) _realVid = externals.vid;
 
 }
 

@@ -4,6 +4,7 @@ import { Cmd_AddCommand } from './cmd.js';
 import { Cvar_RegisterVariable } from './cvar.js';
 import { key_dest, set_key_dest, key_game, key_console, key_message,
 	key_lines, edit_line, key_linepos } from './keys.js';
+import { Draw_GetUIScale } from './gl_draw.js';
 
 /*
 ==============================================================================
@@ -52,7 +53,23 @@ export let con_notifylines = 0; // scan lines to clear for notify lines
 
 // Cross-reference to other systems (set via Con_SetExternals to avoid circular imports)
 let _cls = { state: 0, signon: 0 };
-let _vid = { width: 640, height: 480 };
+let _realVid = { width: 640, height: 480 };
+const _vid = {
+	get width() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.width / ( dpr * uiScale ) );
+
+	},
+	get height() {
+
+		const dpr = window.devicePixelRatio || 1;
+		const uiScale = Draw_GetUIScale();
+		return Math.floor( _realVid.height / ( dpr * uiScale ) );
+
+	}
+};
 let _getRealtime = () => 0;
 let _scr_disabled_for_loading = false;
 let _developer = { value: 0 };
@@ -70,7 +87,7 @@ let cr = false;
 export function Con_SetExternals( externals ) {
 
 	if ( externals.cls ) _cls = externals.cls;
-	if ( externals.vid ) _vid = externals.vid;
+	if ( externals.vid ) _realVid = externals.vid;
 	if ( externals.getRealtime ) _getRealtime = externals.getRealtime;
 	if ( externals.developer ) _developer = externals.developer;
 	if ( externals.Draw_Character ) _Draw_Character = externals.Draw_Character;
