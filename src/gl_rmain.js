@@ -598,12 +598,13 @@ export function R_DrawViewModel() {
 
 		}
 
-		mesh.material.polygonOffset = true;
-		mesh.material.polygonOffsetFactor = - 1;
-		mesh.material.polygonOffsetUnits = - 1;
+		// Render weapon on top of everything - no depth testing
+		mesh.material.depthTest = false;
+		mesh.material.depthWrite = false;
+		mesh.material.transparent = true;
 
-		// Render after other opaque objects to ensure proper depth interaction
-		mesh.renderOrder = 100;
+		// Render last
+		mesh.renderOrder = 999;
 
 	}
 
