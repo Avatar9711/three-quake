@@ -77,29 +77,44 @@ This gives menus/HUD a classic look while scaling to any screen size.
 // 240 gives a classic Quake feel, 480 gives smaller/more modern UI
 let scr_conheight = 240;
 
-// Calculated scale factor (CSS pixels per virtual pixel)
+// Calculated scale factor (physical pixels per virtual pixel)
 let _uiScale = 1;
+
+// Cached virtual dimensions
+let _virtualWidth = 640;
+let _virtualHeight = 480;
 
 /*
 ================
 _calculateUIScale
 
-Calculate the UI scale factor based on screen size and target virtual height.
-Updates _uiScale and returns the virtual dimensions.
+Calculate the UI scale factor based on physical pixel count and target
+virtual height. Uses physical pixels (CSS * devicePixelRatio) so that
+screens with the same physical resolution get the same UI size regardless
+of OS DPI settings. Also ensures the overlay canvas is crisp on HiDPI.
 ================
 */
 function _calculateUIScale() {
 
-	// _realVid.width/height are already in CSS pixels (window.innerWidth/Height)
-	// Calculate scale to achieve target virtual height
-	// Use floor to avoid fractional scaling (sharper pixels)
-	_uiScale = Math.max( 1, Math.floor( _realVid.height / scr_conheight ) );
+	const dpr = window.devicePixelRatio || 1;
+	const physicalWidth = Math.floor( _realVid.width * dpr );
+	const physicalHeight = Math.floor( _realVid.height * dpr );
 
-	// Return virtual dimensions
-	return {
-		width: Math.floor( _realVid.width / _uiScale ),
-		height: Math.floor( _realVid.height / _uiScale )
-	};
+	// Calculate scale from physical pixels
+	// Use floor to avoid fractional scaling (sharper pixels)
+	_uiScale = Math.max( 1, Math.floor( physicalHeight / scr_conheight ) );
+
+	// Ensure minimum 320px virtual width so Quake's menus fit
+	while ( _uiScale > 1 && Math.floor( physicalWidth / _uiScale ) < 320 ) {
+
+		_uiScale --;
+
+	}
+
+	_virtualWidth = Math.floor( physicalWidth / _uiScale );
+	_virtualHeight = Math.floor( physicalHeight / _uiScale );
+
+	return { width: _virtualWidth, height: _virtualHeight };
 
 }
 
@@ -109,13 +124,16 @@ SCR_SetConHeight
 
 Set the target virtual height for UI scaling.
 Lower values = larger UI, higher values = smaller UI.
-Minimum: 200, Maximum: screen height in CSS pixels.
+Minimum: 200, Maximum: physical screen height.
 ================
 */
 export function SCR_SetConHeight( height ) {
 
+	const dpr = window.devicePixelRatio || 1;
+	const physicalHeight = Math.floor( _realVid.height * dpr );
+
 	// Clamp to reasonable range
-	scr_conheight = Math.max( 200, Math.min( height, _realVid.height ) );
+	scr_conheight = Math.max( 200, Math.min( height, physicalHeight ) );
 	_calculateUIScale();
 
 }
@@ -138,13 +156,34 @@ export function SCR_GetConHeight() {
 Draw_GetUIScale
 
 Get the current UI scale factor.
-Used by other modules to calculate virtual dimensions.
 ================
 */
 export function Draw_GetUIScale() {
 
 	_calculateUIScale();
 	return _uiScale;
+
+}
+
+/*
+================
+Draw_GetVirtualWidth / Draw_GetVirtualHeight
+
+Get the current virtual dimensions for 2D drawing.
+Used by other modules instead of computing locally.
+================
+*/
+export function Draw_GetVirtualWidth() {
+
+	_calculateUIScale();
+	return _virtualWidth;
+
+}
+
+export function Draw_GetVirtualHeight() {
+
+	_calculateUIScale();
+	return _virtualHeight;
 
 }
 
@@ -244,12 +283,12 @@ let _realVid = { width: 640, height: 480 };
 const _vid = {
 	get width() {
 
-		return Math.floor( _realVid.width / _uiScale );
+		return _virtualWidth;
 
 	},
 	get height() {
 
-		return Math.floor( _realVid.height / _uiScale );
+		return _virtualHeight;
 
 	},
 	get numpages() { return _realVid.numpages; }
@@ -380,18 +419,21 @@ export function Draw_Init( canvas ) {
 	} else {
 
 		// Create an overlay canvas positioned on top of the WebGL canvas
+		// Size to physical pixels (CSS * dpr) for crisp HiDPI rendering
+		const dpr = window.devicePixelRatio || 1;
 		overlayCanvas = document.createElement( 'canvas' );
-		overlayCanvas.width = _realVid.width || 640;
-		overlayCanvas.height = _realVid.height || 480;
+		overlayCanvas.width = Math.floor( ( _realVid.width || 640 ) * dpr );
+		overlayCanvas.height = Math.floor( ( _realVid.height || 480 ) * dpr );
 		overlayCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
 		overlayCtx = overlayCanvas.getContext( '2d' );
 		document.body.appendChild( overlayCanvas );
 
-		// Resize overlay when window resizes
+		// Resize overlay when window resizes (use physical pixels)
 		window.addEventListener( 'resize', function () {
 
-			overlayCanvas.width = _realVid.width;
-			overlayCanvas.height = _realVid.height;
+			const dpr = window.devicePixelRatio || 1;
+			overlayCanvas.width = Math.floor( _realVid.width * dpr );
+			overlayCanvas.height = Math.floor( _realVid.height * dpr );
 			// Scale is applied per-frame in Draw_BeginFrame
 
 		} );
