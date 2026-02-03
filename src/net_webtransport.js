@@ -35,7 +35,9 @@ class WebTransportConnection {
 		this.reliableStream = null;
 		this.reliableWriter = null;
 		this.reliableReader = null;
-		// QUIC datagrams are NOT used — all messages go over the bidirectional stream
+		this.unreliableStream = null;
+		this.unreliableWriter = null;
+		this.unreliableReader = null;
 		this.pendingMessages = []; // { reliable: boolean, data: Uint8Array }
 		this.connected = false;
 		this.error = null;
@@ -572,6 +574,11 @@ export async function WT_Connect( host ) {
 		conn.reliableWriter = conn.reliableStream.writable.getWriter();
 		conn.reliableReader = conn.reliableStream.readable.getReader();
 
+		// Create second bidirectional stream for unreliable messages
+		conn.unreliableStream = await transport.createBidirectionalStream();
+		conn.unreliableWriter = conn.unreliableStream.writable.getWriter();
+		conn.unreliableReader = conn.unreliableStream.readable.getReader();
+
 		// If joining a room, send LOBBY_JOIN message first
 		if ( roomId ) {
 
@@ -680,8 +687,9 @@ export async function WT_Connect( host ) {
 
 		}
 
-		// QUIC datagrams are NOT used due to a Deno server bug that causes event loop freeze.
-		// All messages (reliable type=1, unreliable type=2) go over the bidirectional stream.
+		// Two QUIC bidirectional streams are used:
+		// Stream 1 (reliable) for signon data, stringcmds, name/frag changes
+		// Stream 2 (unreliable) for entity updates, clientdata, clc_move
 
 		// Store connection
 		sock.driverdata = conn;
@@ -777,11 +785,17 @@ async function _WT_ConnectDirect( url, originalHost ) {
 		conn.reliableWriter = conn.reliableStream.writable.getWriter();
 		conn.reliableReader = conn.reliableStream.readable.getReader();
 
+		// Create second bidirectional stream for unreliable messages
+		conn.unreliableStream = await transport.createBidirectionalStream();
+		conn.unreliableWriter = conn.unreliableStream.writable.getWriter();
+		conn.unreliableReader = conn.unreliableStream.readable.getReader();
+
 		// Room servers in direct mode don't need lobby protocol
 		// Just set up the connection and let the game proceed
 
-		// QUIC datagrams are NOT used due to a Deno server bug that causes event loop freeze.
-		// All messages (reliable type=1, unreliable type=2) go over the bidirectional stream.
+		// Two QUIC bidirectional streams are used:
+		// Stream 1 (reliable) for signon data, stringcmds, name/frag changes
+		// Stream 2 (unreliable) for entity updates, clientdata, clc_move
 
 		// Store connection
 		sock.driverdata = conn;
@@ -837,14 +851,12 @@ async function _WT_ConnectDirect( url, originalHost ) {
 =============
 _WT_StartBackgroundReaders
 
-Start background tasks to read from reliable stream and datagrams
+Start background readers for reliable and unreliable streams
 =============
 */
 function _WT_StartBackgroundReaders( sock, conn ) {
 
-	// Read all messages from the bidirectional stream.
-	// QUIC datagrams are NOT used due to a Deno server bug that causes event loop freeze.
-	// Both reliable (type=1) and unreliable (type=2) messages come through the stream.
+	// Read reliable messages from the first bidirectional stream
 	( async () => {
 
 		try {
@@ -854,9 +866,7 @@ function _WT_StartBackgroundReaders( sock, conn ) {
 				const msg = await _WT_ReadFramedMessageWithType( conn.reliableReader );
 				if ( msg === null ) break;
 
-				// type=1 is reliable, type=2 is unreliable
-				const isReliable = msg.type !== 2;
-				conn.pendingMessages.push( { reliable: isReliable, data: msg.data } );
+				conn.pendingMessages.push( { reliable: true, data: msg.data } );
 
 			}
 
@@ -864,7 +874,34 @@ function _WT_StartBackgroundReaders( sock, conn ) {
 
 			if ( conn.connected ) {
 
-				Con_DPrintf( 'Stream reader error: ' + error.message + '\n' );
+				Con_DPrintf( 'Reliable stream reader error: ' + error.message + '\n' );
+				conn.error = error;
+
+			}
+
+		}
+
+	} )();
+
+	// Read unreliable messages from the second bidirectional stream
+	( async () => {
+
+		try {
+
+			while ( conn.connected ) {
+
+				const msg = await _WT_ReadFramedMessageWithType( conn.unreliableReader );
+				if ( msg === null ) break;
+
+				conn.pendingMessages.push( { reliable: false, data: msg.data } );
+
+			}
+
+		} catch ( error ) {
+
+			if ( conn.connected ) {
+
+				Con_DPrintf( 'Unreliable stream reader error: ' + error.message + '\n' );
 				conn.error = error;
 
 			}
@@ -1124,8 +1161,7 @@ export function WT_QSendMessage( sock, data ) {
 =============
 WT_SendUnreliableMessage
 
-Send an unreliable message over the bidirectional stream with type=2.
-QUIC datagrams are NOT used due to a Deno server bug that causes event loop freeze.
+Send an unreliable message over the second bidirectional stream (unreliable channel).
 =============
 */
 export function WT_SendUnreliableMessage( sock, data ) {
@@ -1146,14 +1182,14 @@ export function WT_SendUnreliableMessage( sock, data ) {
 
 	}
 
-	if ( ! conn.reliableWriter ) {
+	if ( conn.unreliableWriter == null ) {
 
-		Con_DPrintf( 'WT_SendUnreliableMessage: no reliableWriter\n' );
+		Con_DPrintf( 'WT_SendUnreliableMessage: no unreliableWriter\n' );
 		return - 1;
 
 	}
 
-	// Frame as [type=2][length:2][data:N] and send on the bidirectional stream
+	// Frame as [type=2][length:2][data:N] and send on the unreliable stream
 	const frame = new Uint8Array( 3 + data.cursize );
 	frame[ 0 ] = 2; // unreliable type
 	frame[ 1 ] = data.cursize & 0xff;
@@ -1161,7 +1197,7 @@ export function WT_SendUnreliableMessage( sock, data ) {
 	frame.set( data.data.subarray( 0, data.cursize ), 3 );
 
 	// Send asynchronously
-	conn.reliableWriter.write( frame ).then( () => {
+	conn.unreliableWriter.write( frame ).then( () => {
 
 		// Success
 
@@ -1225,10 +1261,16 @@ export function WT_Close( sock ) {
 
 	try {
 
-		// Close writer
+		// Close writers
 		if ( conn.reliableWriter ) {
 
 			conn.reliableWriter.close().catch( () => {} );
+
+		}
+
+		if ( conn.unreliableWriter ) {
+
+			conn.unreliableWriter.close().catch( () => {} );
 
 		}
 

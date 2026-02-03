@@ -19,14 +19,18 @@ export function WT_SetMapCallbacks(
 export function WT_SetMaxClientsCallback(_setMaxClients: (maxClients: number) => void): void {}
 
 // Connection tracking
-// All messages (reliable and unreliable) go over the bidirectional stream.
-// QUIC datagrams are NOT used due to a Deno bug that causes event loop freeze.
+// Two QUIC bidirectional streams per connection:
+// Stream 1 (reliable) for signon data, stringcmds, name/frag changes
+// Stream 2 (unreliable) for entity updates, clientdata, clc_move
 interface ClientConnection {
 	id: number;
 	webTransport: WebTransport;
 	bidirectionalStream: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } | null;
 	reliableWriter: WritableStreamDefaultWriter<Uint8Array> | null;
 	reliableReader: ReadableStreamDefaultReader<Uint8Array> | null;
+	unreliableStream: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } | null;
+	unreliableWriter: WritableStreamDefaultWriter<Uint8Array> | null;
+	unreliableReader: ReadableStreamDefaultReader<Uint8Array> | null;
 	pendingMessages: Array<{ reliable: boolean; data: Uint8Array }>;
 	connected: boolean;
 	address: string;
@@ -247,6 +251,9 @@ async function _handleWebTransportSession(wt: WebTransport, address: string): Pr
 			bidirectionalStream: null,
 			reliableWriter: null,
 			reliableReader: null,
+			unreliableStream: null,
+			unreliableWriter: null,
+			unreliableReader: null,
 			pendingMessages: [],
 			connected: true,
 			address: address,
@@ -256,15 +263,28 @@ async function _handleWebTransportSession(wt: WebTransport, address: string): Pr
 		// Accept the first bidirectional stream (reliable channel)
 		const streamReader = wt.incomingBidirectionalStreams.getReader();
 		const { value: stream, done } = await streamReader.read();
-		streamReader.releaseLock();
 
 		if (done || !stream) {
+			streamReader.releaseLock();
 			wt.close();
 			return;
 		}
 		clientConn.bidirectionalStream = stream;
 		clientConn.reliableWriter = stream.writable.getWriter();
 		clientConn.reliableReader = stream.readable.getReader();
+
+		// Accept the second bidirectional stream (unreliable channel)
+		const { value: stream2, done: done2 } = await streamReader.read();
+		streamReader.releaseLock();
+
+		if (done2 || !stream2) {
+			Sys_Printf('Client %s did not open unreliable stream, closing\n', address);
+			wt.close();
+			return;
+		}
+		clientConn.unreliableStream = stream2;
+		clientConn.unreliableWriter = stream2.writable.getWriter();
+		clientConn.unreliableReader = stream2.readable.getReader();
 
 		// Create a socket for this game connection
 		// Note: With multi-process architecture, lobby protocol is handled by lobby_server.js
@@ -298,26 +318,20 @@ async function _handleWebTransportSession(wt: WebTransport, address: string): Pr
 }
 
 /**
- * Start background reader for reliable stream.
- * Datagrams use pull-based reading (triggered by WT_QGetMessage) instead of
- * a background loop, to avoid event loop starvation from Deno's QUIC internals.
+ * Start background readers for reliable and unreliable streams.
  */
 function _startBackgroundReaders(
 	sock: QSocket,
 	conn: ClientConnection
 ): void {
-	// Read all messages from the bidirectional stream (both reliable type=1 and unreliable type=2)
-	// QUIC datagrams are NOT used due to a Deno bug that causes event loop freeze.
-	// All messages go through the stream with framing: [type:1][length:2][data:N]
+	// Read reliable messages from the first bidirectional stream
 	(async () => {
 		try {
 			while (conn.connected && conn.reliableReader) {
 				const msg = await _readFramedMessage(conn.reliableReader);
 				if (msg === null) break;
 
-				// type=1 is reliable, type=2 is unreliable (sent over stream to avoid QUIC datagram bug)
-				const isReliable = msg.type !== 2;
-				conn.pendingMessages.push({ reliable: isReliable, data: msg.data });
+				conn.pendingMessages.push({ reliable: true, data: msg.data });
 				conn.lastMessageTime = Date.now();
 
 				// Yield to macrotask queue to prevent microtask starvation.
@@ -325,20 +339,52 @@ function _startBackgroundReaders(
 
 				// If messages are piling up, the game loop isn't consuming them
 				if (conn.pendingMessages.length > MAX_PENDING_MESSAGES) {
-					Sys_Printf('Stream reader: %d pending messages for %s, disconnecting\n', conn.pendingMessages.length, conn.address);
+					Sys_Printf('Reliable reader: %d pending messages for %s, disconnecting\n', conn.pendingMessages.length, conn.address);
 					conn.connected = false;
 					break;
 				}
 			}
 		} catch (error) {
 			if (conn.connected) {
-				Sys_Printf('Stream reader error for %s: %s\n', conn.address, String(error));
+				Sys_Printf('Reliable reader error for %s: %s\n', conn.address, String(error));
 				conn.connected = false;
 			}
 		}
 		// Release the reader lock when done
 		try {
 			conn.reliableReader?.releaseLock();
+		} catch { /* ignore */ }
+	})();
+
+	// Read unreliable messages from the second bidirectional stream
+	(async () => {
+		try {
+			while (conn.connected && conn.unreliableReader) {
+				const msg = await _readFramedMessage(conn.unreliableReader);
+				if (msg === null) break;
+
+				conn.pendingMessages.push({ reliable: false, data: msg.data });
+				conn.lastMessageTime = Date.now();
+
+				// Yield to macrotask queue to prevent microtask starvation.
+				await _yieldToMacrotasks();
+
+				// If messages are piling up, the game loop isn't consuming them
+				if (conn.pendingMessages.length > MAX_PENDING_MESSAGES) {
+					Sys_Printf('Unreliable reader: %d pending messages for %s, disconnecting\n', conn.pendingMessages.length, conn.address);
+					conn.connected = false;
+					break;
+				}
+			}
+		} catch (error) {
+			if (conn.connected) {
+				Sys_Printf('Unreliable reader error for %s: %s\n', conn.address, String(error));
+				conn.connected = false;
+			}
+		}
+		// Release the reader lock when done
+		try {
+			conn.unreliableReader?.releaseLock();
 		} catch { /* ignore */ }
 	})();
 }
@@ -654,15 +700,14 @@ export function WT_QSendMessage(
 }
 
 /**
- * Send an unreliable message over the bidirectional stream with type=2.
- * QUIC datagrams are NOT used due to a Deno bug that causes event loop freeze.
+ * Send an unreliable message over the second bidirectional stream (unreliable channel).
  */
 export function WT_SendUnreliableMessage(
 	sock: QSocket,
 	data: { data: Uint8Array; cursize: number }
 ): number {
 	const conn = sock.driverdata;
-	if (!conn || !conn.connected || !conn.reliableWriter) return -1;
+	if (!conn || !conn.connected || !conn.unreliableWriter) return -1;
 
 	// Frame the message: [type=2][length:2][data:N]
 	const frame = new Uint8Array(3 + data.cursize);
@@ -671,7 +716,7 @@ export function WT_SendUnreliableMessage(
 	frame[2] = (data.cursize >> 8) & 0xff;
 	frame.set(data.data.subarray(0, data.cursize), 3);
 
-	conn.reliableWriter.write(frame).catch(() => {
+	conn.unreliableWriter.write(frame).catch(() => {
 		// Unreliable — silently fail
 	});
 
@@ -704,10 +749,14 @@ export function WT_Close(sock: QSocket): void {
 	conn.connected = false;
 
 	try {
-		// Close writer and reader
+		// Close writers
 		if (conn.reliableWriter) {
 			conn.reliableWriter.close().catch(() => {});
 			conn.reliableWriter = null;
+		}
+		if (conn.unreliableWriter) {
+			conn.unreliableWriter.close().catch(() => {});
+			conn.unreliableWriter = null;
 		}
 		conn.webTransport.close();
 	} catch {
