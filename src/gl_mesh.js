@@ -354,7 +354,7 @@ are updated in place from a pre-allocated buffer.
 const _castIntBuf = new Int32Array( 1 );
 const _castFloatView = new Float32Array( _castIntBuf.buffer );
 
-export function GL_DrawAliasFrame( paliashdr, posenum, shadedots, shadelight ) {
+export function GL_DrawAliasFrame( paliashdr, posenum ) {
 
 	const verts = paliashdr.posedata[ posenum ];
 	if ( ! verts ) return null;
@@ -364,7 +364,7 @@ export function GL_DrawAliasFrame( paliashdr, posenum, shadedots, shadelight ) {
 
 	let cached = paliashdr._geoCache.get( posenum );
 
-	if ( ! cached ) {
+	if ( cached == null ) {
 
 		// Build geometry template for this pose (done once, cached)
 		const cmds = paliashdr.commands;
@@ -456,22 +456,16 @@ export function GL_DrawAliasFrame( paliashdr, posenum, shadedots, shadelight ) {
 
 		}
 
-		// Build Three.js BufferGeometry template
-		const posArray = new Float32Array( positions );
-		const normalArray = new Float32Array( normals );
-		const uvArray = new Float32Array( uvs );
-		const colorArray = new Float32Array( positions.length ); // 3 components per vertex, same count as positions
-
-		const geometry = new THREE.BufferGeometry();
-		geometry.setAttribute( 'position', new THREE.BufferAttribute( posArray, 3 ) );
-		geometry.setAttribute( 'normal', new THREE.BufferAttribute( normalArray, 3 ) );
-		geometry.setAttribute( 'uv', new THREE.BufferAttribute( uvArray, 2 ) );
-		geometry.setAttribute( 'color', new THREE.BufferAttribute( colorArray, 3 ) );
-		geometry.setIndex( indices );
+		// Build shared BufferAttributes for the template (no color — color is per-entity)
+		const posAttr = new THREE.BufferAttribute( new Float32Array( positions ), 3 );
+		const normalAttr = new THREE.BufferAttribute( new Float32Array( normals ), 3 );
+		const uvAttr = new THREE.BufferAttribute( new Float32Array( uvs ), 2 );
 
 		cached = {
-			geometry,
-			colorArray,
+			posAttr,
+			normalAttr,
+			uvAttr,
+			indices,
 			lightnormalindices,
 			vertexCount
 		};
@@ -479,26 +473,7 @@ export function GL_DrawAliasFrame( paliashdr, posenum, shadedots, shadelight ) {
 
 	}
 
-	// Update vertex colors in place from lighting data
-	const hasLighting = shadedots && shadelight !== undefined;
-	if ( hasLighting ) {
-
-		const colorArr = cached.colorArray;
-		const lni = cached.lightnormalindices;
-		for ( let i = 0; i < cached.vertexCount; i ++ ) {
-
-			const l = shadedots[ lni[ i ] ] * shadelight;
-			colorArr[ i * 3 ] = l;
-			colorArr[ i * 3 + 1 ] = l;
-			colorArr[ i * 3 + 2 ] = l;
-
-		}
-
-		cached.geometry.attributes.color.needsUpdate = true;
-
-	}
-
-	return cached.geometry;
+	return cached;
 
 }
 
@@ -673,10 +648,60 @@ export function R_DrawAliasModel( entity, paliashdr, shadedots, shadelight ) {
 	const posenum = R_SetupAliasFrame( entity, paliashdr );
 	const hasLighting = shadedots && shadelight !== undefined;
 
-	// Get cached geometry (creates template on first call, updates colors in place)
-	const geometry = GL_DrawAliasFrame( paliashdr, posenum, shadedots, shadelight );
-	if ( ! geometry )
+	// Get cached template (shared positions/normals/uvs/indices per model+pose)
+	const template = GL_DrawAliasFrame( paliashdr, posenum );
+	if ( ! template )
 		return null;
+
+	// Build or update per-entity geometry (shares template attributes, owns color buffer)
+	let geometry = entity ? entity._aliasGeo : null;
+	if ( geometry == null ) {
+
+		geometry = new THREE.BufferGeometry();
+		// Allocate per-entity color buffer (will be resized if needed)
+		entity._aliasColorArray = new Float32Array( template.vertexCount * 3 );
+		geometry.setAttribute( 'color', new THREE.BufferAttribute( entity._aliasColorArray, 3 ) );
+		if ( entity != null ) entity._aliasGeo = geometry;
+
+	}
+
+	// When pose changes, swap to the new template's shared attributes
+	if ( entity._aliasPosenum !== posenum ) {
+
+		geometry.setAttribute( 'position', template.posAttr );
+		geometry.setAttribute( 'normal', template.normalAttr );
+		geometry.setAttribute( 'uv', template.uvAttr );
+		geometry.setIndex( template.indices );
+
+		// Resize color buffer if vertex count changed between poses
+		if ( entity._aliasColorArray.length < template.vertexCount * 3 ) {
+
+			entity._aliasColorArray = new Float32Array( template.vertexCount * 3 );
+			geometry.setAttribute( 'color', new THREE.BufferAttribute( entity._aliasColorArray, 3 ) );
+
+		}
+
+		entity._aliasPosenum = posenum;
+
+	}
+
+	// Update per-entity vertex colors from lighting data
+	if ( hasLighting ) {
+
+		const colorArr = entity._aliasColorArray;
+		const lni = template.lightnormalindices;
+		for ( let i = 0; i < template.vertexCount; i ++ ) {
+
+			const l = shadedots[ lni[ i ] ] * shadelight;
+			colorArr[ i * 3 ] = l;
+			colorArr[ i * 3 + 1 ] = l;
+			colorArr[ i * 3 + 2 ] = l;
+
+		}
+
+		geometry.attributes.color.needsUpdate = true;
+
+	}
 
 	// Check if this is a player entity with custom colors
 	let playerSkinTexture = null;
@@ -697,10 +722,10 @@ export function R_DrawAliasModel( entity, paliashdr, shadedots, shadelight ) {
 
 	// Get or create mesh for this entity
 	let mesh = entity ? entity._aliasMesh : null;
-	if ( ! mesh ) {
+	if ( mesh == null ) {
 
 		mesh = new THREE.Mesh( geometry, material );
-		if ( entity ) entity._aliasMesh = mesh;
+		if ( entity != null ) entity._aliasMesh = mesh;
 
 	} else {
 
