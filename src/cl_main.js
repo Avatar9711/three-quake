@@ -223,6 +223,13 @@ export function CL_Disconnect() {
 	cls.demoplayback = cls.timedemo = false;
 	cls.signon = 0;
 
+	// Clear room from browser URL on disconnect (single player or multiplayer)
+	if ( typeof window !== 'undefined' && window.location.search.includes( 'room=' ) ) {
+
+		history.replaceState( null, '', window.location.pathname );
+
+	}
+
 }
 
 export function CL_Disconnect_f() {
@@ -230,13 +237,6 @@ export function CL_Disconnect_f() {
 	CL_Disconnect();
 	// if ( sv.active )
 	//     Host_ShutdownServer( false );
-
-	// Clear room from browser URL on explicit disconnect
-	if ( typeof window !== 'undefined' && window.location.search.includes( 'room=' ) ) {
-
-		history.replaceState( null, '', window.location.pathname );
-
-	}
 
 }
 
