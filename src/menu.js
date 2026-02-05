@@ -1069,10 +1069,20 @@ function M_LanConfig_Key( key ) {
 		case K_ENTER:
 			if ( slist_rooms.length > 0 && slist_cursor < slist_rooms.length ) {
 
+				const room = slist_rooms[ slist_cursor ];
+
+				// Don't allow joining full rooms
+				if ( room.playerCount >= room.maxPlayers ) {
+
+					if ( _S_LocalSound ) _S_LocalSound( 'misc/menu2.wav' );
+					m_return_reason = 'Room is full (' + room.playerCount + '/' + room.maxPlayers + ' players)';
+					break;
+
+				}
+
 				// Join selected room
 				m_entersound = true;
 
-				const room = slist_rooms[ slist_cursor ];
 				const params = new URLSearchParams( window.location.search );
 				const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER;
 
