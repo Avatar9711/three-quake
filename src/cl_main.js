@@ -549,7 +549,7 @@ export function CL_LerpPoint() {
 
 	let f = cl.mtime[ 0 ] - cl.mtime[ 1 ];
 
-	if ( ! f || cl_nolerp.value || cls.timedemo /* || sv.active */ ) {
+	if ( f === 0 || cl_nolerp.value !== 0 || cls.timedemo /* || sv.active */ ) {
 
 		cl.time = cl.mtime[ 0 ];
 		return 1;
@@ -604,11 +604,12 @@ Ported from: QW/client/cl_ents.c
 
 // Cached vectors for CL_LinkPacketEntities (avoid per-frame allocations)
 const _peOldorg = new Float32Array( 3 );
+const _peDelta = new Float32Array( 3 );
 const _peFv = new Float32Array( 3 );
 const _peRv = new Float32Array( 3 );
 const _peUv = new Float32Array( 3 );
 
-function CL_LinkPacketEntities() {
+function CL_LinkPacketEntities( frac ) {
 
 	const seq = CL_GetServerSequence();
 	if ( CL_GetValidSequence() === 0 )
@@ -716,6 +717,31 @@ function CL_LinkPacketEntities() {
 		// Save previous origin for trails
 		VectorCopy( ent.origin, _peOldorg );
 
+		//
+		// Interpolation: track per-entity server positions using msg_origins
+		// similar to the NQ-style entity interpolation in CL_RelinkEntities.
+		// Update msg_origins only when new server data arrives (sequence changed).
+		//
+		if ( ent._lastPESeq === 0 || seq - ent._lastPESeq > 64 ) {
+
+			// First appearance or entity was gone for a long time — snap to current
+			VectorCopy( s1.origin, ent.msg_origins[ 0 ] );
+			VectorCopy( s1.origin, ent.msg_origins[ 1 ] );
+			VectorCopy( s1.angles, ent.msg_angles[ 0 ] );
+			VectorCopy( s1.angles, ent.msg_angles[ 1 ] );
+			ent._lastPESeq = seq;
+
+		} else if ( ent._lastPESeq !== seq ) {
+
+			// New server data — shift old position and store new
+			VectorCopy( ent.msg_origins[ 0 ], ent.msg_origins[ 1 ] );
+			VectorCopy( s1.origin, ent.msg_origins[ 0 ] );
+			VectorCopy( ent.msg_angles[ 0 ], ent.msg_angles[ 1 ] );
+			VectorCopy( s1.angles, ent.msg_angles[ 0 ] );
+			ent._lastPESeq = seq;
+
+		}
+
 		// rotate binary objects locally
 		if ( model != null && ( model.flags & 0x0008 ) ) { // EF_ROTATE
 
@@ -725,16 +751,40 @@ function CL_LinkPacketEntities() {
 
 		} else {
 
-			ent.angles[ 0 ] = s1.angles[ 0 ];
-			ent.angles[ 1 ] = s1.angles[ 1 ];
-			ent.angles[ 2 ] = s1.angles[ 2 ];
+			// Interpolate angles with short-path wrapping
+			let f = frac;
+			for ( let i = 0; i < 3; i ++ ) {
+
+				let d = ent.msg_angles[ 0 ][ i ] - ent.msg_angles[ 1 ][ i ];
+				if ( d > 180 )
+					d -= 360;
+				else if ( d < - 180 )
+					d += 360;
+				ent.angles[ i ] = ent.msg_angles[ 1 ][ i ] + f * d;
+
+			}
 
 		}
 
-		// Set origin directly from server (no interpolation yet, matching QW FIXME)
-		ent.origin[ 0 ] = s1.origin[ 0 ];
-		ent.origin[ 1 ] = s1.origin[ 1 ];
-		ent.origin[ 2 ] = s1.origin[ 2 ];
+		// Interpolate origin with teleport detection
+		{
+
+			let f = frac;
+			for ( let i = 0; i < 3; i ++ ) {
+
+				_peDelta[ i ] = ent.msg_origins[ 0 ][ i ] - ent.msg_origins[ 1 ][ i ];
+				if ( _peDelta[ i ] > 100 || _peDelta[ i ] < - 100 )
+					f = 1; // assume a teleportation, not a motion
+
+			}
+
+			for ( let i = 0; i < 3; i ++ ) {
+
+				ent.origin[ i ] = ent.msg_origins[ 1 ][ i ] + f * _peDelta[ i ];
+
+			}
+
+		}
 
 		// Mark as updated this frame
 		ent.msgtime = cl.mtime[ 0 ];
@@ -1077,7 +1127,7 @@ export function CL_RelinkEntities() {
 	// Link non-player entities from QW-style packet_entities
 	if ( usePacketEntities ) {
 
-		CL_LinkPacketEntities();
+		CL_LinkPacketEntities( frac );
 
 	}
 

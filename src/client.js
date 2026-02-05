@@ -186,6 +186,8 @@ export class entity_t {
 		this.trivial_accept = 0;
 		this.topnode = null; // for bmodels, first world node that splits bmodel, or NULL if not split
 
+		this._lastPESeq = 0; // last server sequence this entity was updated from packet entities (for interpolation)
+
 	}
 
 }

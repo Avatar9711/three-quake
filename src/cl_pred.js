@@ -132,6 +132,7 @@ export const cl_simvel = new Float32Array( 3 ); // Simulated/predicted velocity
 export const cl_simangles = new Float32Array( 3 ); // Simulated angles
 export let cl_simonground = -1; // Predicted onground state: -1 = in air, >= 0 = on ground
 export function set_cl_simonground( v ) { cl_simonground = v; }
+export let cl_prediction_active = false; // true once CL_PredictMove has produced valid output
 
 // Estimated latency for timing
 let cls_latency = 0;
@@ -738,6 +739,7 @@ export function CL_PredictMove() {
 		VectorCopy( from.playerstate.velocity, cl_simvel );
 		VectorCopy( from.playerstate.origin, cl_simorg );
 		cl_simonground = from.playerstate.onground ? 0 : -1;
+		cl_prediction_active = true;
 		return;
 	}
 
@@ -747,8 +749,9 @@ export function CL_PredictMove() {
 	// Predict forward from acknowledged state
 	let to = null;
 	let lastFrom = from;
+	let i;
 
-	for ( let i = 1; i < UPDATE_BACKUP - 1 && incoming_sequence + i < outgoing_sequence; i++ ) {
+	for ( i = 1; i < UPDATE_BACKUP - 1 && incoming_sequence + i < outgoing_sequence; i++ ) {
 		to = frames[ ( incoming_sequence + i ) & UPDATE_MASK ];
 		CL_PredictUsercmd( lastFrom.playerstate, to.playerstate, to.cmd, false );
 
@@ -758,7 +761,8 @@ export function CL_PredictMove() {
 		lastFrom = to;
 	}
 
-	if ( to == null )
+	// net hasn't delivered packets in a long time...
+	if ( i === UPDATE_BACKUP - 1 || to == null )
 		return;
 
 	// Interpolate some fraction of the final frame
@@ -778,6 +782,7 @@ export function CL_PredictMove() {
 			VectorCopy( to.playerstate.velocity, cl_simvel );
 			VectorCopy( to.playerstate.origin, cl_simorg );
 			cl_simonground = to.playerstate.onground ? 0 : -1;
+			cl_prediction_active = true;
 			return;
 		}
 	}
@@ -792,6 +797,7 @@ export function CL_PredictMove() {
 
 	// Set predicted onground state (use the latest predicted frame)
 	cl_simonground = to.playerstate.onground ? 0 : -1;
+	cl_prediction_active = true;
 }
 
 /*
@@ -840,6 +846,7 @@ export function CL_ResetPrediction() {
 	cl_simvel.fill( 0 );
 	cl_simangles.fill( 0 );
 	cl_simonground = -1;
+	cl_prediction_active = false;
 
 	for ( let i = 0; i < UPDATE_BACKUP; i++ ) {
 		frames[ i ].senttime = 0;
