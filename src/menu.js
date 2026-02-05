@@ -92,6 +92,15 @@ async function M_FetchRooms() {
 	slist_error = '';
 	slist_rooms = [];
 
+	// Check if WebTransport is available before attempting
+	if ( typeof WebTransport === 'undefined' ) {
+
+		alert( 'Multiplayer requires a browser with WebTransport support (Chrome 97+, Edge 97+, Firefox 114+, or Opera 83+).' );
+		M_Menu_Main_f();
+		return;
+
+	}
+
 	try {
 
 		const params = new URLSearchParams( window.location.search );
@@ -172,16 +181,23 @@ const episodes = [
 
 /**
  * Called when a connection attempt fails.
- * If m_return_onerror is set, returns to the menu with error message displayed.
+ * If m_return_onerror is set, returns to the saved menu state with error message.
+ * Otherwise falls back to the Multiplayer menu (e.g., for URL-based joins).
  */
 export function M_ConnectionError( reason ) {
 
+	m_return_reason = reason || 'Connection failed';
+
 	if ( m_return_onerror ) {
 
-		m_return_reason = reason || 'Connection failed';
+		// Return to the menu we came from
 		m_state = m_return_state;
 		m_return_onerror = false;
-		// Note: key_dest should already be key_menu since we're returning
+
+	} else {
+
+		// Fall back to Multiplayer menu (for URL-based joins that bypass menu)
+		m_state = m_multiplayer;
 
 	}
 
@@ -866,17 +882,10 @@ const MULTIPLAYER_ITEMS = 3;
 
 function M_Menu_MultiPlayer_f() {
 
-	// Check if browser supports WebTransport
-	if ( typeof WebTransport === 'undefined' ) {
-
-		alert( 'Multiplayer requires a browser with WebTransport support (Chrome 97+, Edge 97+, Firefox 114+, or Opera 83+).' );
-		return;
-
-	}
-
 	setKeyDest( key_menu );
 	m_state = m_multiplayer;
 	m_entersound = true;
+	m_return_reason = '';
 
 }
 
@@ -891,6 +900,13 @@ function M_MultiPlayer_Draw() {
 
 	const f = Math.floor( _host_time_get() * 10 ) % 6;
 	M_DrawTransPic( 54, 32 + m_multiplayer_cursor * 20, _Draw_CachePic( 'gfx/menudot' + ( f + 1 ) + '.lmp' ) );
+
+	// Error message from connection attempt
+	if ( m_return_reason ) {
+
+		M_PrintWhite( 72, 97, m_return_reason );
+
+	}
 
 }
 
@@ -1291,6 +1307,15 @@ function M_GameOptions_Key( key ) {
 
 				// Create room on WebTransport server and connect as client
 				if ( _WT_CreateRoom ) {
+
+					// Check if WebTransport is available before attempting
+					if ( typeof WebTransport === 'undefined' ) {
+
+						alert( 'Multiplayer requires a browser with WebTransport support (Chrome 97+, Edge 97+, Firefox 114+, or Opera 83+).' );
+						M_Menu_Main_f();
+						return;
+
+					}
 
 					const params = new URLSearchParams( window.location.search );
 					const serverUrl = params.get( 'server' ) || DEFAULT_WT_SERVER;
