@@ -86,6 +86,12 @@ const _damage_forward = new Float32Array( 3 );
 const _damage_right = new Float32Array( 3 );
 const _damage_up = new Float32Array( 3 );
 
+// Cached buffers for V_CalcRefdef (Golden Rule #4)
+const _calcrefdef_forward = new Float32Array( 3 );
+const _calcrefdef_right = new Float32Array( 3 );
+const _calcrefdef_up = new Float32Array( 3 );
+const _calcrefdef_angles = new Float32Array( 3 );
+
 export function V_CalcRoll( angles, velocity ) {
 
 	AngleVectors( angles, _forward, _right, _up );
@@ -814,14 +820,14 @@ export function V_CalcRefdef() {
 	V_AddIdle();
 
 	// offsets - QuakeWorld uses simangles for prediction
-	const forward = new Float32Array( 3 );
-	const right = new Float32Array( 3 );
-	const up = new Float32Array( 3 );
+	const forward = _calcrefdef_forward;
+	const right = _calcrefdef_right;
+	const up = _calcrefdef_up;
 	if ( usePrediction ) {
 		AngleVectors( cl_simangles, forward, right, up );
 	} else {
 		// Use entity angles like WinQuake for local play
-		const angles = new Float32Array( 3 );
+		const angles = _calcrefdef_angles;
 		angles[ PITCH ] = - ent.angles[ PITCH ]; // because entity pitches are actually backward
 		angles[ YAW ] = ent.angles[ YAW ];
 		angles[ ROLL ] = ent.angles[ ROLL ];
