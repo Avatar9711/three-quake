@@ -1725,8 +1725,13 @@ export function R_MarkLeaves() {
 
 	}
 
-	if ( mirror )
+	if ( mirror ) {
+
+		// Mirror rendering - keep visibility from main view, don't update
+		_visibilityNeedsUpdate = false;
 		return;
+
+	}
 
 	_visibilityNeedsUpdate = true;
 	inc_r_visframecount();
@@ -2392,6 +2397,9 @@ export function GL_BuildLightmaps() {
 
 	// Clear PVS instance visibility info
 	instanceVisInfo.length = 0;
+
+	// Force visibility update on first frame after map load
+	_visibilityNeedsUpdate = true;
 
 	// Clear water/sky mesh caches
 	for ( const mesh of _waterMeshesInScene ) {
