@@ -222,7 +222,7 @@ async function handleSession( wt, address ) {
 					const config = JSON.parse( configJson );
 					const result = await RoomManager_CreateRoom( {
 						map: config.map || 'rapture1',
-						maxPlayers: config.maxPlayers || 8,
+						maxPlayers: config.maxPlayers || 4,
 						hostName: config.hostName || 'Player',
 					} );
 
@@ -238,7 +238,7 @@ async function handleSession( wt, address ) {
 							id: result.id,
 							port: result.port,
 							map: room !== null ? room.map : ( config.map || 'rapture1' ),
-							maxPlayers: room !== null ? room.maxPlayers : ( config.maxPlayers || 8 ),
+							maxPlayers: room !== null ? room.maxPlayers : ( config.maxPlayers || 4 ),
 							hostName: room !== null ? room.hostName : ( config.hostName || 'Player' ),
 						};
 						const json = JSON.stringify( roomInfo );
@@ -264,7 +264,7 @@ async function handleSession( wt, address ) {
 					Sys_Printf( 'Auto-creating shared room for link: %s\n', roomId );
 					const result = await RoomManager_CreateRoom( {
 						map: 'rapture1',
-						maxPlayers: 16,
+						maxPlayers: 4,
 						hostName: 'Shared',
 						specificId: '3LUVYX',  // Use the specific ID so all joiners end up in same room
 					} );

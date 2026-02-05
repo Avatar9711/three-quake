@@ -56,7 +56,7 @@ const CONFIG = {
 	port: 4433,
 	certFile: '/etc/letsencrypt/live/wts.mrdoob.com/fullchain.pem',
 	keyFile: '/etc/letsencrypt/live/wts.mrdoob.com/privkey.pem',
-	maxClients: 16,
+	maxClients: 4,
 	defaultMap: 'start',
 	roomId: null,        // Room ID if spawned by lobby server
 	directMode: false,   // Skip lobby protocol, accept connections directly
