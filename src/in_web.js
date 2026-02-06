@@ -100,6 +100,25 @@ let targetElement = null;
 // Mobile/touch state
 let isMobile = false;
 
+// Meta Quest — disables pointer lock and fullscreen
+let isQuest = false;
+
+function requestPointerLock() {
+
+	if ( pointerLocked || isQuest || targetElement == null ) return;
+
+	targetElement.requestPointerLock();
+
+}
+
+function requestFullscreen() {
+
+	if ( isQuest ) return;
+
+	Touch_RequestFullscreen();
+
+}
+
 // cvars (matching in_win.c)
 const m_filter = { name: 'm_filter', string: '0', value: 0 };
 const sensitivity = { name: 'sensitivity', string: '3', value: 3 };
@@ -178,9 +197,9 @@ function handleKeyDown( event ) {
 			Touch_Enable();
 			mouseactive = true;
 
-		} else if ( ! pointerLocked && targetElement && ! Touch_IsMobile() ) {
+		} else if ( ! Touch_IsMobile() ) {
 
-			targetElement.requestPointerLock();
+			requestPointerLock();
 
 		}
 
@@ -270,7 +289,7 @@ function handleMouseDown( event ) {
 		// Request fullscreen only when actually playing a map (not menu, demo, or idle state)
 		if ( key_dest === key_game && cls.state === ca_connected && ! cls.demoplayback ) {
 
-			Touch_RequestFullscreen();
+			requestFullscreen();
 
 		}
 
@@ -284,9 +303,9 @@ function handleMouseDown( event ) {
 	} else {
 
 		// Request pointer lock only when in-game (not menu/console or demos), and not on mobile
-		if ( ! pointerLocked && targetElement && key_dest === key_game && ! cls.demoplayback && ! Touch_IsMobile() ) {
+		if ( key_dest === key_game && ! cls.demoplayback && ! Touch_IsMobile() ) {
 
-			targetElement.requestPointerLock();
+			requestPointerLock();
 
 		}
 
@@ -381,7 +400,7 @@ function handleTouchStart( event ) {
 	// On mobile, request fullscreen only when actually playing a map (not menu, demo, or idle state)
 	if ( isMobile && key_dest === key_game && cls.state === ca_connected && ! cls.demoplayback ) {
 
-		Touch_RequestFullscreen();
+		requestFullscreen();
 
 	}
 
@@ -436,6 +455,8 @@ export function IN_Init( element ) {
 
 	// Initialize touch controls for mobile
 	isMobile = Touch_IsMobile();
+	isQuest = /OculusBrowser|Quest/i.test( navigator.userAgent );
+
 	if ( isMobile ) {
 
 		// Always append touch UI to document.body for consistent positioning
@@ -650,9 +671,9 @@ Only applies on desktop; mobile uses fullscreen instead.
 */
 export function IN_RequestPointerLock() {
 
-	if ( ! pointerLocked && targetElement && ! isMobile ) {
+	if ( ! isMobile ) {
 
-		targetElement.requestPointerLock();
+		requestPointerLock();
 
 	}
 
