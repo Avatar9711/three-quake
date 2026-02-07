@@ -28,8 +28,23 @@ import {
 	cl, cl_visedicts, cl_numvisedicts, cl_dlights, cl_entities,
 	cl_lightstyle
 } from './client.js';
-import { d_lightstylevalue } from './glquake.js';
+import { d_lightstylevalue,
+	r_norefresh, r_drawentities, r_drawviewmodel, r_speeds,
+	r_fullbright, r_lightmap, r_shadows, r_mirroralpha,
+	r_wateralpha, r_dynamic, r_novis, r_drawworld, r_waterwarp,
+	gl_clear, gl_cull, gl_texsort, gl_smoothmodels, gl_affinemodels,
+	gl_polyblend, gl_flashblend, gl_playermip, gl_nocolors,
+	gl_keeptjunctions, gl_reporttjunctions,
+	gl_doubleeyes, gl_max_size
+} from './glquake.js';
 export { GL_BuildLightmaps_rsurf as GL_BuildLightmaps };
+export { r_norefresh, r_drawentities, r_drawviewmodel, r_speeds,
+	r_fullbright, r_lightmap, r_shadows, r_mirroralpha,
+	r_wateralpha, r_dynamic, r_novis, r_drawworld, r_waterwarp,
+	gl_clear, gl_cull, gl_texsort, gl_smoothmodels, gl_affinemodels,
+	gl_polyblend, gl_flashblend, gl_playermip, gl_nocolors,
+	gl_keeptjunctions, gl_reporttjunctions,
+	gl_doubleeyes, gl_max_size };
 
 //============================================================================
 // glquake.h constants
@@ -161,35 +176,10 @@ export let camera = null; // THREE.PerspectiveCamera
 // Cvars
 //============================================================================
 
-export const r_norefresh = new cvar_t( 'r_norefresh', '0' );
-export const r_drawentities = new cvar_t( 'r_drawentities', '1' );
-export const r_drawviewmodel = new cvar_t( 'r_drawviewmodel', '1' );
-export const r_speeds = new cvar_t( 'r_speeds', '0' );
-export const r_fullbright = new cvar_t( 'r_fullbright', '0' );
-export const r_lightmap = new cvar_t( 'r_lightmap', '0' );
-export const r_shadows = new cvar_t( 'r_shadows', '0' );
-export const r_mirroralpha = new cvar_t( 'r_mirroralpha', '1' );
-export const r_wateralpha = new cvar_t( 'r_wateralpha', '1' );
-export const r_dynamic = new cvar_t( 'r_dynamic', '1' );
-export const r_novis = new cvar_t( 'r_novis', '0' );
-export const r_drawworld = new cvar_t( 'r_drawworld', '1' );
-export const r_waterwarp = new cvar_t( 'r_waterwarp', '1' );
-
-export const gl_finish = new cvar_t( 'gl_finish', '0' );
-export const gl_clear = new cvar_t( 'gl_clear', '0' );
-export const gl_cull = new cvar_t( 'gl_cull', '1' );
-export const gl_texsort = new cvar_t( 'gl_texsort', '1' );
-export const gl_smoothmodels = new cvar_t( 'gl_smoothmodels', '1' );
-export const gl_affinemodels = new cvar_t( 'gl_affinemodels', '0' );
-export const gl_polyblend = new cvar_t( 'gl_polyblend', '1' );
-export const gl_flashblend = new cvar_t( 'gl_flashblend', '1' );
-export const gl_playermip = new cvar_t( 'gl_playermip', '0' );
-export const gl_nocolors = new cvar_t( 'gl_nocolors', '0' );
-export const gl_keeptjunctions = new cvar_t( 'gl_keeptjunctions', '0' );
-export const gl_reporttjunctions = new cvar_t( 'gl_reporttjunctions', '0' );
-export const gl_doubleeyes = new cvar_t( 'gl_doubleeyes', '1' );
+// Most cvars are defined in glquake.js and imported+re-exported above.
+// They are registered in gl_rmisc.js R_Init().
+// gl_ztrick is unique to gl_rmain (not in glquake.js).
 export const gl_ztrick = new cvar_t( 'gl_ztrick', '1' );
-export const gl_max_size = new cvar_t( 'gl_max_size', '1024' );
 
 //============================================================================
 // v_blend -- screen blend color for damage/powerups
