@@ -1213,6 +1213,7 @@ export function R_DrawBrushModel( e ) {
 		}
 		brushGroup = null;
 		e._brushGroup = null;
+		e._brushAnimSurfaces = null;
 
 	}
 
@@ -1220,10 +1221,12 @@ export function R_DrawBrushModel( e ) {
 
 		// First time drawing this entity - build and cache the group
 		brushGroup = new THREE.Group();
+		let animSurfaces = null;
 
 		// Build meshes for all non-sky/water surfaces
 		if ( clmodel.surfaces && clmodel.nummodelsurfaces ) {
 
+			let childIdx = 0;
 			const startSurf = clmodel.firstmodelsurface;
 			for ( let i = 0; i < clmodel.nummodelsurfaces; i ++ ) {
 
@@ -1253,7 +1256,8 @@ export function R_DrawBrushModel( e ) {
 				const geom = DrawGLPoly( psurf.polys, planeNormal );
 				if ( ! geom ) continue;
 
-				const t = R_TextureAnimation( psurf.texinfo.texture );
+				const baseTex = psurf.texinfo.texture;
+				const t = R_TextureAnimation( baseTex );
 				const diffuse = ( t && t.gl_texture ) ? t.gl_texture : null;
 				const lmTex = lightmapTextures[ psurf.lightmaptexturenum ];
 
@@ -1274,14 +1278,62 @@ export function R_DrawBrushModel( e ) {
 				const mesh = new THREE.Mesh( geom, material );
 				brushGroup.add( mesh );
 
+				// Track surfaces with time-based animation for per-frame material updates
+				if ( baseTex && ( baseTex.anim_total > 0 || baseTex.alternate_anims != null ) ) {
+
+					if ( animSurfaces == null ) animSurfaces = [];
+					animSurfaces.push( { childIdx, baseTex, lmTex } );
+
+				}
+
+				childIdx ++;
+
 			}
 
 		}
 
 		// Cache on entity and track for disposal on map change
 		e._brushGroup = brushGroup;
-		e._brushGroupFrame = e.frame; // Track frame for texture animation invalidation
+		e._brushGroupFrame = e.frame;
+		e._brushAnimSurfaces = animSurfaces;
 		_allBrushEntityGroups.add( brushGroup );
+
+	}
+
+	// Update materials for surfaces with time-based texture animation
+	// Geometry stays cached — only materials are swapped each frame
+	if ( e._brushAnimSurfaces != null ) {
+
+		const children = brushGroup.children;
+		for ( let a = 0; a < e._brushAnimSurfaces.length; a ++ ) {
+
+			const anim = e._brushAnimSurfaces[ a ];
+			const t = R_TextureAnimation( anim.baseTex );
+			const diffuse = ( t && t.gl_texture ) ? t.gl_texture : null;
+			const child = children[ anim.childIdx ];
+			if ( child == null ) continue;
+
+			// Check if texture actually changed
+			const currentMap = child.material.map;
+			if ( currentMap === diffuse ) continue;
+
+			// Swap to the correct material (reuse from cache)
+			const diffuseId = diffuse ? diffuse.id : 0;
+			const lmId = anim.lmTex ? anim.lmTex.id : 0;
+			const matKey = `${diffuseId}_${lmId}`;
+			let material = _brushMaterialCache.get( matKey );
+			if ( ! material ) {
+
+				material = ( diffuse && anim.lmTex )
+					? createQuakeLightmapMaterial( diffuse, anim.lmTex )
+					: new THREE.MeshBasicMaterial( { map: diffuse } );
+				_brushMaterialCache.set( matKey, material );
+
+			}
+
+			child.material = material;
+
+		}
 
 	}
 
